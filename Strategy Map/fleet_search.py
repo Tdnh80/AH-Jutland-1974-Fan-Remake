@@ -553,14 +553,18 @@ class Game:
             'course': f.course, 'speed': f.speed,
             'ships': [s.name for s in f.ships],
             'scheduled': f.scheduled, 'schedule_end_substep': f.schedule_end_substep,
-            'waypoints': [list(w) for w in f.waypoints],          # tuples -> lists
+            'waypoints': [list(w) for w in f.waypoints],
             'display_history': [list(h) for h in f.display_history],
+            'formation_kind': f.formation_kind, 'spacing': f.spacing,
+            'deploy': f.deploy, 'echelon_deg': f.echelon_deg,
+            'pos_mode': f.pos_mode,
+            'layout_heading': list(f.layout_heading) if f.layout_heading is not None else None,
         }
 
     @staticmethod
     def _fleet_from_dict(d):
-        # tuples matter: waypoints/anchor feed hex math & == comparisons.
-        return Fleet(
+        lh = d.get('layout_heading')
+        f = Fleet(
             name=d['name'], side=d['side'], activated_turn=d['activated_turn'],
             anchor_xy=tuple(d['anchor_xy']), anchor_substep=d['anchor_substep'],
             course=d['course'], speed=d['speed'],
@@ -569,13 +573,22 @@ class Game:
             waypoints=[tuple(w) for w in d['waypoints']],
             display_history=[tuple(h) for h in d['display_history']],
         )
+        f.formation_kind = d.get('formation_kind', formation.LINE_AHEAD)
+        f.spacing = d.get('spacing', DEFAULT_SPACING)
+        f.deploy = d.get('deploy', 'right')
+        f.echelon_deg = d.get('echelon_deg', 45.0)
+        f.pos_mode = d.get('pos_mode', formation.REL_MODE)
+        f.layout_heading = tuple(lh) if lh is not None else None
+        return f
 
     def to_dict(self):
         return {
-            'version': 4,
+            'version': 5,
             'current_substep': self.current_substep,
             'visibility': self.visibility,
             'start_minute': self.start_minute,
+            'state': self.state,
+            'contact_hexes': sorted(list(h) for h in self.contact_hexes),
             'fleets': [self._fleet_to_dict(f) for f in self.fleets.values()],
         }
 
@@ -584,6 +597,8 @@ class Game:
         self.visibility = data['visibility']
         self.start_minute = data.get('start_minute', 0)
         self.last_report = None
+        self.state = data.get('state', STATE_SEARCH)
+        self.contact_hexes = {tuple(h) for h in data.get('contact_hexes', [])}
         self.fleets = {f.name: f for f in (self._fleet_from_dict(d) for d in data['fleets'])}
 
     def save(self, filename):
