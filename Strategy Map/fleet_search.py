@@ -681,6 +681,36 @@ class Game:
 
 
 # ---------------------------------------------------------------------------
+# Double-blind view filter
+# ---------------------------------------------------------------------------
+
+def view_for_side(game, side):
+    """裁判机对某一方的双盲视图:己方舰队全可见;接敌后才见对方涉及接敌的中心。"""
+    own = [Game._fleet_to_dict(f) for f in game.fleets.values() if f.side == side]
+    enemy_contacts = []
+    if game.state == STATE_CONTACT and game.last_report:
+        seen = set()
+        for e in game.last_report['encounters']:
+            if side == 'GB':
+                name, xy = e['ge'], e['ge_xy_roll']
+            else:
+                name, xy = e['gb'], e['gb_xy_roll']
+            if name in seen:
+                continue
+            seen.add(name)
+            enemy_contacts.append({'name': name, 'center': list(xy),
+                                   'cell': display_cell(*xy_to_hex(*xy))})
+    return {
+        'side': side,
+        'state': game.state,
+        'turn': game.current_turn,
+        'substep': game.current_substep,
+        'own': own,
+        'enemy_contacts': enemy_contacts,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Visualization
 # ---------------------------------------------------------------------------
 
