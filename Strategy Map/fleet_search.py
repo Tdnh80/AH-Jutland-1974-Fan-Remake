@@ -26,11 +26,13 @@ Deferred to v5 (need 修正.txt material): formation states (column / line-abrea
 (maintain / break contact); networking.
 """
 
+import io
 import json
 import math
 import random
 import re
 import shlex
+from contextlib import redirect_stdout
 from dataclasses import dataclass, field, asdict
 import formation
 import journal as journal_mod
@@ -986,9 +988,120 @@ Speeds:    12 / 18 / 24 kn  (= 2 / 3 / 4 hex per 3-turn cycle)
 """
 
 
+class QuitSignal(Exception):
+    pass
+
+
+def run_command(game, line):
+    """执行一条命令文本(print 输出)。退出类命令抛 QuitSignal。"""
+    if not line.strip():
+        return
+    game.journal.record_command(game.start_minute + game.current_substep * 10, line)
+    try:
+        parts = shlex.split(line)
+    except ValueError as e:
+        print(f"  parse error: {e}")
+        return
+    cmd, args = parts[0].lower(), parts[1:]
+    g = game  # 现有分支用的是变量名 g;保持一致以便直接移动
+    if cmd in ('quit', 'exit', 'q'):
+        raise QuitSignal()
+    elif cmd in ('help', '?'): print(HELP)
+    elif cmd == 'new':
+        name, side, act, hx, crs, spd, n = args
+        g.add_fleet(name, side.upper(), int(act), hx, crs.upper(), int(spd), int(n))
+        print(f"  ok: {name!r} created")
+    elif cmd == 'delete':
+        g.delete_fleet(args[0]); print(f"  ok: deleted {args[0]!r}")
+    elif cmd == 'relocate':
+        name, hx, crs, spd = args
+        g.relocate(name, hx, crs.upper(), int(spd)); print(f"  ok: relocated {name!r}")
+    elif cmd == 'course':
+        spd = int(args[2]) if len(args) > 2 else None
+        g.course_change(args[0], args[1].upper(), spd); print("  ok: course changed")
+    elif cmd == 'clear':
+        ok = g.clear_schedule(args[0])
+        print(f"  ok: schedule cleared" if ok else "  (no active schedule)")
+    elif cmd == 'schedule':
+        name = args[0]; spd = int(args[1]); path = args[2:]
+        g.schedule(name, spd, path)
+        print(f"  ok: {name!r} sched {spd}kn via {' '.join(path)}")
+    elif cmd == 'randwalk':
+        name = args[0]; spd = int(args[1]) if len(args) > 1 else None
+        path = g.randwalk(name, spd)
+        print(f"  ok: {name!r} randwalk → {' '.join(display_cell(*h) for h in path)}")
+    elif cmd == 'formation':
+        # formation <name> <ahead|abreast|echelon> [right|left] [absolute|relative] [echelon_deg]
+        name = args[0]
+        f = g._get(name)
+        f.formation_kind = args[1].lower()
+        if len(args) > 2: f.deploy = args[2].lower()
+        if len(args) > 3: f.pos_mode = args[3].lower()
+        if len(args) > 4: f.echelon_deg = float(args[4])
+        if f.pos_mode == formation.ABS_MODE:
+            f.layout_heading = DIRVEC[f.course]
+        print(f"  ok: {name!r} formation {f.formation_kind}/{f.pos_mode}")
+    elif cmd == 'replay':
+        g.replay_to(int(args[0])); print(f"  ok: replayed to turn {args[0]}")
+        print(g.list_status())
+    elif cmd == 'list': print(g.list_status())
+    elif cmd == 'vis':
+        v = float(args[0])
+        if v > MAX_VISIBILITY:
+            print(f"  warning: {v:.0f} > 1 hex ({MAX_VISIBILITY:.0f}); clamping"); v = MAX_VISIBILITY
+        g.visibility = v; print(f"  ok: visibility = {v:.0f} yd ({v/HEX_SIDE:.2f} hex)")
+    elif cmd == 'time':
+        g.start_minute = timekeep.hhmm_to_min(args[0])
+        print(f"  ok: clock starts {g.datestr(0)}")
+    elif cmd == 'save':
+        g.save(args[0]); print(f"  ok: saved {args[0]!r}")
+    elif cmd == 'load':
+        g.load(args[0]); print(f"  ok: loaded {args[0]!r}")
+        print(g.list_status())
+    elif cmd == 'plot':
+        fn = args[0] if args else 'board.png'; plot_state(g, fn); print(f"  ok: saved {fn}")
+    elif cmd == 'demo':
+        seed = int(args[0]) if args else None
+        mt = int(args[1]) if len(args) > 1 else 30
+        run_demo(g, seed=seed, max_turns=mt)
+    elif cmd == 'step':
+        encs = g.step_turn()
+        if not encs:
+            print(f"  → T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}, no contact")
+            print(g.list_status())
+        else:
+            print(f"\n  ╔══ ENCOUNTER (pre-contact, frozen) ══════════════")
+            print(f"  ║  T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}   vis={g.visibility:.0f} yd")
+            print(f"  ╚══════════════════════════════════════════════════")
+            for i, e in enumerate(encs, 1):
+                print(f"\n  contact{i}: {e['gb']} ⟷ {e['ge']}")
+                # center micro-coordinates (formation reference point, spec §3.3)
+                print(f"    {e['gb']:<6} center {micro_str(*e['gb_xy_roll'])}")
+                print(f"    {e['ge']:<6} center {micro_str(*e['ge_xy_roll'])}")
+                print(f"    closest pair now: {e['dist_roll']:.0f} yd (>= vis: clean state)")
+                print(f"    [aux] projected contact {g.clock(round(e['contact_sub']))} "
+                      f"(+{(e['contact_sub']-g.current_substep)*10:.1f} min), dist = vis:")
+                print(f"          {e['gb']} center {micro_str(*e['gb_xy_contact'])}")
+                print(f"          {e['ge']} center {micro_str(*e['ge_xy_contact'])}")
+            print("\n  Schedules HALTED.  (post-contact state machine: v5)\n")
+    else:
+        print(f"  unknown command: {cmd!r}")
+
+
+def execute_command(game, line):
+    """像 run_command,但捕获输出为字符串返回(供服务器用)。QuitSignal -> 返回 '__QUIT__'。"""
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            run_command(game, line)
+    except QuitSignal:
+        return "__QUIT__"
+    return buf.getvalue()
+
+
 def main():
     g = Game()
-    print("Jutland Fleet Search & Encounter — MVP v4")
+    print("Jutland Fleet Search & Encounter — v5")
     print("Type 'help' for commands.\n")
     while True:
         try:
@@ -996,94 +1109,12 @@ def main():
                          f"{g.datestr(g.current_substep)}] > ").strip()
         except (EOFError, KeyboardInterrupt):
             print(); break
-        if not line: continue
-        try: parts = shlex.split(line)
-        except ValueError as e:
-            print(f"  parse error: {e}"); continue
-        cmd, args = parts[0].lower(), parts[1:]
+        if not line:
+            continue
         try:
-            g.journal.record_command(g.start_minute + g.current_substep * 10, line)
-            if cmd in ('quit', 'exit', 'q'): break
-            elif cmd in ('help', '?'): print(HELP)
-            elif cmd == 'new':
-                name, side, act, hx, crs, spd, n = args
-                g.add_fleet(name, side.upper(), int(act), hx, crs.upper(), int(spd), int(n))
-                print(f"  ok: {name!r} created")
-            elif cmd == 'delete':
-                g.delete_fleet(args[0]); print(f"  ok: deleted {args[0]!r}")
-            elif cmd == 'relocate':
-                name, hx, crs, spd = args
-                g.relocate(name, hx, crs.upper(), int(spd)); print(f"  ok: relocated {name!r}")
-            elif cmd == 'course':
-                spd = int(args[2]) if len(args) > 2 else None
-                g.course_change(args[0], args[1].upper(), spd); print("  ok: course changed")
-            elif cmd == 'clear':
-                ok = g.clear_schedule(args[0])
-                print(f"  ok: schedule cleared" if ok else "  (no active schedule)")
-            elif cmd == 'schedule':
-                name = args[0]; spd = int(args[1]); path = args[2:]
-                g.schedule(name, spd, path)
-                print(f"  ok: {name!r} sched {spd}kn via {' '.join(path)}")
-            elif cmd == 'randwalk':
-                name = args[0]; spd = int(args[1]) if len(args) > 1 else None
-                path = g.randwalk(name, spd)
-                print(f"  ok: {name!r} randwalk → {' '.join(display_cell(*h) for h in path)}")
-            elif cmd == 'formation':
-                # formation <name> <ahead|abreast|echelon> [right|left] [absolute|relative] [echelon_deg]
-                name = args[0]
-                f = g._get(name)
-                f.formation_kind = args[1].lower()
-                if len(args) > 2: f.deploy = args[2].lower()
-                if len(args) > 3: f.pos_mode = args[3].lower()
-                if len(args) > 4: f.echelon_deg = float(args[4])
-                if f.pos_mode == formation.ABS_MODE:
-                    f.layout_heading = DIRVEC[f.course]
-                print(f"  ok: {name!r} formation {f.formation_kind}/{f.pos_mode}")
-            elif cmd == 'replay':
-                g.replay_to(int(args[0])); print(f"  ok: replayed to turn {args[0]}")
-                print(g.list_status())
-            elif cmd == 'list': print(g.list_status())
-            elif cmd == 'vis':
-                v = float(args[0])
-                if v > MAX_VISIBILITY:
-                    print(f"  warning: {v:.0f} > 1 hex ({MAX_VISIBILITY:.0f}); clamping"); v = MAX_VISIBILITY
-                g.visibility = v; print(f"  ok: visibility = {v:.0f} yd ({v/HEX_SIDE:.2f} hex)")
-            elif cmd == 'time':
-                g.start_minute = timekeep.hhmm_to_min(args[0])
-                print(f"  ok: clock starts {g.datestr(0)}")
-            elif cmd == 'save':
-                g.save(args[0]); print(f"  ok: saved {args[0]!r}")
-            elif cmd == 'load':
-                g.load(args[0]); print(f"  ok: loaded {args[0]!r}")
-                print(g.list_status())
-            elif cmd == 'plot':
-                fn = args[0] if args else 'board.png'; plot_state(g, fn); print(f"  ok: saved {fn}")
-            elif cmd == 'demo':
-                seed = int(args[0]) if args else None
-                mt = int(args[1]) if len(args) > 1 else 30
-                run_demo(g, seed=seed, max_turns=mt)
-            elif cmd == 'step':
-                encs = g.step_turn()
-                if not encs:
-                    print(f"  → T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}, no contact")
-                    print(g.list_status())
-                else:
-                    print(f"\n  ╔══ ENCOUNTER (pre-contact, frozen) ══════════════")
-                    print(f"  ║  T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}   vis={g.visibility:.0f} yd")
-                    print(f"  ╚══════════════════════════════════════════════════")
-                    for i, e in enumerate(encs, 1):
-                        print(f"\n  contact{i}: {e['gb']} ⟷ {e['ge']}")
-                        # center micro-coordinates (formation reference point, spec §3.3)
-                        print(f"    {e['gb']:<6} center {micro_str(*e['gb_xy_roll'])}")
-                        print(f"    {e['ge']:<6} center {micro_str(*e['ge_xy_roll'])}")
-                        print(f"    closest pair now: {e['dist_roll']:.0f} yd (>= vis: clean state)")
-                        print(f"    [aux] projected contact {g.clock(round(e['contact_sub']))} "
-                              f"(+{(e['contact_sub']-g.current_substep)*10:.1f} min), dist = vis:")
-                        print(f"          {e['gb']} center {micro_str(*e['gb_xy_contact'])}")
-                        print(f"          {e['ge']} center {micro_str(*e['ge_xy_contact'])}")
-                    print("\n  Schedules HALTED.  (post-contact state machine: v5)\n")
-            else:
-                print(f"  unknown command: {cmd!r}")
+            run_command(g, line)
+        except QuitSignal:
+            break
         except Exception as e:
             print(f"  error: {e}")
 
