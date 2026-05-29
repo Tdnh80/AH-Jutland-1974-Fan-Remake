@@ -193,6 +193,36 @@ def random_walk_path(start, speed, rng, prev_dir=None, straight_bias=0.65,
     return out
 
 
+def attracted_walk_path(start, target, speed, rng, prev_dir=None, pull=0.0, bound=40):
+    """像 random_walk_path,但以概率 pull 选朝 target 方向推进的相邻格。"""
+    n = HEX_PER_CYCLE[speed]
+    cur, cd, out = start, prev_dir, []
+    for _ in range(n):
+        if rng.random() < pull:
+            # 选使到 target 的轴向距离最小的相邻方向
+            best, bestd = None, None
+            for d in DIRECTION_LIST:
+                nb = hex_neighbour(cur, d)
+                if abs(nb[0]) > bound or abs(nb[1]) > bound:
+                    continue
+                dd = abs(nb[0] - target[0]) + abs(nb[1] - target[1])
+                if bestd is None or dd < bestd:
+                    best, bestd = d, dd
+            if best is not None:
+                nb = hex_neighbour(cur, best)
+                out.append(nb)
+                cur, cd = nb, best
+                continue
+        # 否则普通直行偏置随机走一步
+        step = random_walk_path(cur, 12, rng, prev_dir=cd)  # 12kn -> 1 步
+        if step:
+            new_pos = step[0]
+            new_dir = direction_between(cur, new_pos) or cd
+            cur, cd = new_pos, new_dir
+            out.append(cur)
+    return out[:n]
+
+
 def hhmm(total_minutes):
     h = (total_minutes // 60) % 24
     m = total_minutes % 60
@@ -764,10 +794,31 @@ def run_demo(g, seed=None, max_turns=30, frame_prefix='demo'):
     g.add_fleet("GB1", "GB", 0, f"{rng.randint(-3,1)},{rng.randint(-2,2)}", "E", 18, 4)
     g.add_fleet("GE1", "GE", 0, f"{rng.randint(3,7)},{rng.randint(3,7)}", "W", 18, 3)
 
-    def reroll(n):
-        try: g.randwalk(n, rng.choice([12, 18, 24]))
-        except Exception: pass
-    reroll("GB1"); reroll("GE1")
+    def attracted_schedule(name, target_name, turn):
+        """给 name 队设定朝 target_name 偏置的随机走路径;pull 随回合递增。"""
+        f = g._get(name)
+        target_f = g._get(target_name)
+        speed = rng.choice([12, 18, 24])
+        pull = min(0.85, 0.1 + 0.06 * turn)
+        cur = xy_to_hex(*f.lead_xy(g.current_substep))
+        target_hex = xy_to_hex(*target_f.lead_xy(g.current_substep))
+        path = attracted_walk_path(cur, target_hex, speed, rng, prev_dir=f.course, pull=pull)
+        if len(path) == HEX_PER_CYCLE[speed]:
+            try:
+                g.schedule(name, speed, [display_cell(*h) for h in path])
+            except Exception:
+                pass
+        else:
+            try:
+                g.randwalk(name, speed)
+            except Exception:
+                pass
+
+    # Initial schedules
+    try: attracted_schedule("GB1", "GE1", 0)
+    except Exception: pass
+    try: attracted_schedule("GE1", "GB1", 0)
+    except Exception: pass
 
     files = [f"{frame_prefix}_t00.png"]; plot_state(g, files[0])
     for t in range(1, max_turns + 1):
@@ -778,7 +829,14 @@ def run_demo(g, seed=None, max_turns=30, frame_prefix='demo'):
             print(f"  demo: contact {g.clock(round(e['contact_sub']))} after {len(files)-1} frames")
             return files
         for n in list(g.fleets):
-            if not g.fleets[n].scheduled: reroll(n)
+            if not g.fleets[n].scheduled:
+                other = "GE1" if n == "GB1" else "GB1"
+                if other in g.fleets:
+                    try: attracted_schedule(n, other, t)
+                    except Exception: pass
+                else:
+                    try: g.randwalk(n, rng.choice([12, 18, 24]))
+                    except Exception: pass
     print(f"  demo: no contact in {max_turns} turns")
     return files
 
