@@ -310,6 +310,10 @@ class Game:
     def clock(self, substep):
         return hhmm(self.start_minute + substep * 10)
 
+    def datestr(self, substep):
+        """绝对日期时刻 DD/MM/YY HHMM。"""
+        return timekeep.fmt_date(self.start_minute + substep * 10)
+
     # --- fleet ops ---
 
     def add_fleet(self, name, side, activated, hex_str, course, speed, n):
@@ -814,7 +818,8 @@ def main():
     print("Type 'help' for commands.\n")
     while True:
         try:
-            line = input(f"[{g.clock(g.current_substep)} sub{g.current_substep}] > ").strip()
+            line = input(f"[T{g.current_turn} sub{g.current_substep} "
+                         f"{g.datestr(g.current_substep)}] > ").strip()
         except (EOFError, KeyboardInterrupt):
             print(); break
         if not line: continue
@@ -855,8 +860,8 @@ def main():
                     print(f"  warning: {v:.0f} > 1 hex ({MAX_VISIBILITY:.0f}); clamping"); v = MAX_VISIBILITY
                 g.visibility = v; print(f"  ok: visibility = {v:.0f} yd ({v/HEX_SIDE:.2f} hex)")
             elif cmd == 'time':
-                t = args[0]; g.start_minute = int(t[:2]) * 60 + int(t[2:])
-                print(f"  ok: clock starts {g.clock(0)}")
+                g.start_minute = timekeep.hhmm_to_min(args[0])
+                print(f"  ok: clock starts {g.datestr(0)}")
             elif cmd == 'save':
                 g.save(args[0]); print(f"  ok: saved {args[0]!r}")
             elif cmd == 'load':
@@ -871,11 +876,11 @@ def main():
             elif cmd == 'step':
                 encs = g.step_turn()
                 if not encs:
-                    print(f"  → {g.clock(g.current_substep)} sub{g.current_substep}, no contact")
+                    print(f"  → T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}, no contact")
                     print(g.list_status())
                 else:
                     print(f"\n  ╔══ ENCOUNTER (pre-contact, frozen) ══════════════")
-                    print(f"  ║  {g.clock(g.current_substep)}   vis={g.visibility:.0f} yd")
+                    print(f"  ║  T{g.current_turn} sub{g.current_substep} {g.datestr(g.current_substep)}   vis={g.visibility:.0f} yd")
                     print(f"  ╚══════════════════════════════════════════════════")
                     for i, e in enumerate(encs, 1):
                         print(f"\n  contact{i}: {e['gb']} ⟷ {e['ge']}")
