@@ -466,15 +466,16 @@ class Game:
     def status_line(self, f):
         if not f.is_active(self.current_substep):
             return f"  {f.name:<12} [{f.side}] inactive (T{f.activated_turn})"
-        lx, ly = f.lead_xy(self.current_substep)
-        micro = micro_str(lx, ly)
+        # center = formation reference point (lead_xy); spec §3.3
+        cx, cy = f.lead_xy(self.current_substep)
+        micro = micro_str(cx, cy)
         if f.scheduled:
             remain = max(0.0, f.schedule_end_substep - self.current_substep)
             end = hex_name(*f.waypoints[-1]) if f.waypoints else "?"
             st = f"sched→{end} ({remain:.0f}st)"
         else:
             st = "free"
-        return (f"  {f.name:<12} [{f.side}] {micro}  course={f.course} "
+        return (f"  {f.name:<12} [{f.side}] center={micro}  course={f.course} "
                 f"speed={f.speed}kn ships={len(f.ships)} {st}")
 
     def list_status(self):
@@ -767,13 +768,14 @@ def main():
                     print(f"  ╚══════════════════════════════════════════════════")
                     for i, e in enumerate(encs, 1):
                         print(f"\n  contact{i}: {e['gb']} ⟷ {e['ge']}")
-                        print(f"    {e['gb']:<6} {micro_str(*e['gb_xy_roll'])}")
-                        print(f"    {e['ge']:<6} {micro_str(*e['ge_xy_roll'])}")
+                        # center micro-coordinates (formation reference point, spec §3.3)
+                        print(f"    {e['gb']:<6} center {micro_str(*e['gb_xy_roll'])}")
+                        print(f"    {e['ge']:<6} center {micro_str(*e['ge_xy_roll'])}")
                         print(f"    closest pair now: {e['dist_roll']:.0f} yd (>= vis: clean state)")
                         print(f"    [aux] projected contact {g.clock(round(e['contact_sub']))} "
                               f"(+{(e['contact_sub']-g.current_substep)*10:.1f} min), dist = vis:")
-                        print(f"          {e['gb']} {micro_str(*e['gb_xy_contact'])}")
-                        print(f"          {e['ge']} {micro_str(*e['ge_xy_contact'])}")
+                        print(f"          {e['gb']} center {micro_str(*e['gb_xy_contact'])}")
+                        print(f"          {e['ge']} center {micro_str(*e['ge_xy_contact'])}")
                     print("\n  Schedules HALTED.  (post-contact state machine: v5)\n")
             else:
                 print(f"  unknown command: {cmd!r}")
