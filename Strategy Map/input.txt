@@ -1,0 +1,94 @@
+Direction:见Searchmap，6个方向
+Speed：见abstract，12kn、18kn、24kn
+specific_coordinates:即微观坐标，船只参考齐建立相对坐标放置
+scheduled?status：
+	若无三回合规划，则输出下一回合预计坐标
+	若有，则输出 下一回合预计坐标+规划结束倒计时
+<output>
+【input】
+
+type：delete fleet、locate fleet、seperate fleet、move fleet
+
+-------------------------------------------
+Storage:（先假定微观船只不变）
+
+fleetname1:
+	ship1 Relative_coordinates
+	ship2 Relative_coordinates
+	……
+fleetname2:
+	……
+……
+
+-------------------------------------------
+initial output interface
+
+fleetname1 <ships_of_fleet1>
+fleetname2 <ships_of_fleet2>
+……
+
+
+input initiation：
+【fleetname1】【activated _Turn】【initial location coordinates】
+【fleetname2】【activated _Turn】【initial location coordinates】
+……
+
+-------------------------------------------
+const output interface
+
+<current Turn>
+
+fleetname1 <location_coordinates> <Course> <Speed> <scheduled?status>
+fleetname2 <location_coordinates> <Course> <Speed> <scheduled?status>
+……
+
+input operation:（refresh）
+【input here】
+【input type all：delete fleet、combine fleet、seperate fleet、new fleet、relocate  fleet、fleet course change 、fleet  location schedule】
+
+
+Next Turn (按键？指令？)
+-------------------------------------------
+input operation:
+
+	delete fleet:
+		【delete】 【fleetname】
+		:confirm?
+		【confirm】
+	combine fleet:（涉及船只相对坐标指定，先不考虑）
+	seperate fleet:（涉及船只相对坐标指定，先不考虑）
+	new fleet :（涉及船只相对坐标指定，先不考虑）
+	relocate fleet:
+		【fleetname】【location_coordinates】【Course】【speed】
+	fleet course change：（注意微观的时序坐标对应，原则上执行命令时，应当处于六角格 [输出的这个六角格坐标] 格边中心点处，起始位置；而若已有规划，要么禁止航向调整 [除非encounter清零状态] ，要么重新考虑微观对应）
+		【fleetname】【changed _Course】【changed_speed】
+	fleet  location schedule:（前提：unscheduled）:
+		<current Turn> <Turn+1> <Turn+2> <Turn+3>
+		【fleetname】【speed】【location_coordinates_1】【location_coordinates_2】【location_coordinates_3】……
+		（注意效验Speed和location合法性，即Speed能走多少格）
+
+--------------------------------------------
+encounter happened:（弹窗）
+
+<current Turn>
+<visibility>
+
+encounter1:
+	<location_coordinates>
+	GB: <encountered_fleet> <specific_coordinates>
+	GE: <encountered_fleet> <specific_coordinates>
+
+encounter2:
+	<location_coordinates>
+	GB: <encountered_fleet> <specific_coordinates>
+	GE: <encountered_fleet> <specific_coordinates>	
+
+……
+
+input encountered fleet location：（遭遇后下一回合位置）
+【encountered_fleetname1】【 location coordinates】【Course】【Speed】
+【encountered_fleetname2】【 location coordinates】【Course】【Speed】
+
+（刷新回const output interface状态，同时清空scheduled?status）
+--------------------------------------------
+完成之后再考虑做联网通信
