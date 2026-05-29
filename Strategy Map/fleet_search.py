@@ -784,6 +784,90 @@ def plot_state(game, filename):
 
 
 # ---------------------------------------------------------------------------
+# Close-up encounter plot
+# ---------------------------------------------------------------------------
+
+def plot_encounter_closeup(game, filename):
+    """画只包含接敌格及其邻格的特写图。若 contact_hexes 为空则退化为 plot_state。"""
+    if not game.contact_hexes:
+        plot_state(game, filename)
+        return
+
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Polygon, Circle
+    except ImportError:
+        raise RuntimeError("matplotlib not installed; pip install matplotlib")
+
+    # 计算包围盒:所有接敌格中心 + 邻格 的像素范围
+    all_hexes = set(game.contact_hexes)
+    for ch in game.contact_hexes:
+        for d in NEIGH:
+            all_hexes.add(hex_neighbour(ch, d))
+
+    pts = [hex_center_xy(*h) for h in all_hexes]
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    margin = HEX_SIDE * 1.5
+    x_min, x_max = min(xs) - margin, max(xs) + margin
+    y_min, y_max = min(ys) - margin, max(ys) + margin
+
+    active = [f for f in game.fleets.values() if f.is_active(game.current_substep)]
+
+    # grid
+    r_lo = int(math.floor(y_min / (HEX_SIDE * _S3))) - 1
+    r_hi = int(math.ceil(y_max / (HEX_SIDE * _S3))) + 1
+    fig, ax = plt.subplots(figsize=(8, 7))
+    for r in range(r_lo, r_hi + 1):
+        q_lo = int(math.floor(x_min / HEX_SIDE - r / 2.0)) - 1
+        q_hi = int(math.ceil(x_max / HEX_SIDE - r / 2.0)) + 1
+        for q in range(q_lo, q_hi + 1):
+            cx, cy = hex_center_xy(q, r)
+            if not (x_min <= cx <= x_max and y_min <= cy <= y_max): continue
+            in_contact = (q, r) in game.contact_hexes
+            ec = '#a0a0a0' if in_contact else '#d3d3d3'
+            lw = 1.0 if in_contact else 0.5
+            fc = '#ffffcc' if in_contact else 'none'
+            ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True,
+                                 facecolor=fc, edgecolor=ec, linewidth=lw))
+            ax.text(cx, cy, display_cell(q, r), ha='center', va='center',
+                    fontsize=7, color='#808080')
+
+    colors = {'GB': '#a32020', 'GE': '#1f4e8a'}
+    for f in active:
+        col = colors[f.side]
+        for _, (sx, sy) in f.ship_positions(game.current_substep):
+            ax.plot(sx, sy, 'o', color=col, markersize=6,
+                    markeredgecolor='black', markeredgewidth=0.5)
+            ax.add_patch(Circle((sx, sy), game.visibility, fill=False,
+                                edgecolor=col, alpha=0.18, linewidth=0.8, linestyle=':'))
+        lx, ly = f.lead_xy(game.current_substep)
+        ax.annotate(f"{f.name}\n{f.speed}kn", (lx, ly),
+                    textcoords='offset points', xytext=(10, -4),
+                    fontsize=9, color=col, weight='bold')
+
+    rep = game.last_report
+    show_enc = rep and rep['substep'] == game.current_substep
+    if show_enc and rep['encounters']:
+        e = rep['encounters'][0]
+        mx = (e['gb_xy_contact'][0] + e['ge_xy_contact'][0]) / 2
+        my = (e['gb_xy_contact'][1] + e['ge_xy_contact'][1]) / 2
+        ax.plot(mx, my, 'X', color='gold', markersize=20,
+                markeredgecolor='black', markeredgewidth=1.2, zorder=5)
+        ax.annotate(f"CONTACT\n{game.clock(round(e['contact_sub']))}", (mx, my),
+                    textcoords='offset points', xytext=(14, 14), fontsize=10,
+                    weight='bold', bbox=dict(boxstyle='round,pad=0.3', fc='gold', alpha=0.85))
+
+    ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
+    ax.set_aspect('equal'); ax.invert_yaxis()
+    ax.set_title(f"Encounter Close-up — {game.clock(game.current_substep)} "
+                 f"(sub{game.current_substep})   vis={game.visibility:.0f} yd   GB=red GE=blue")
+    ax.set_xticks([]); ax.set_yticks([])
+    plt.tight_layout(); plt.savefig(filename, dpi=110, bbox_inches='tight'); plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Demo
 # ---------------------------------------------------------------------------
 
