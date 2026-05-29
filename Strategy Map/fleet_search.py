@@ -790,13 +790,15 @@ def run_demo(g, seed=None, max_turns=30, frame_prefix='demo'):
 HELP = """\
 Commands
 --------
-  new <name> <GB|GE> <activated_turn> <q,r> <course> <speed> <n_ships>
+  new <name> <GB|GE> <activated_turn> <cell> <course> <speed> <n_ships>
   delete <name>
-  relocate <name> <q,r> <course> <speed>
+  relocate <name> <cell> <course> <speed>
   course <name> <course> [speed]              (no active schedule)
-  schedule <name> <speed> <q,r> <q,r> ...     (2/3/4 waypoints; turns & 180 OK)
+  schedule <name> <speed> <cell> <cell> ...   (2/3/4 waypoints; turns & 180 OK)
   clear <name>                                cancel a schedule, keep position
   randwalk <name> [speed]
+  formation <name> <ahead|abreast|echelon> [right|left] [absolute|relative] [deg]
+  replay <turn>                               restore board to saved turn snapshot
   step                                        advance 60 min, detect contact
   list
   vis <yards>                                 0..36000 (cap = 1 hex width)
@@ -806,7 +808,7 @@ Commands
   save <file> / load <file>
   help / quit
 
-Hex names: axial  q,r  (negatives ok), e.g.  0,0   3,-2   -1,5
+Cell names: letter-number  e.g. A13  Z5  DD-1  (or axial q,r for developers)
 Courses:   E NE NW W SW SE
 Speeds:    12 / 18 / 24 kn  (= 2 / 3 / 4 hex per 3-turn cycle)
 """
@@ -828,6 +830,7 @@ def main():
             print(f"  parse error: {e}"); continue
         cmd, args = parts[0].lower(), parts[1:]
         try:
+            g.journal.record_command(g.start_minute + g.current_substep * 10, line)
             if cmd in ('quit', 'exit', 'q'): break
             elif cmd in ('help', '?'): print(HELP)
             elif cmd == 'new':
@@ -853,6 +856,20 @@ def main():
                 name = args[0]; spd = int(args[1]) if len(args) > 1 else None
                 path = g.randwalk(name, spd)
                 print(f"  ok: {name!r} randwalk → {' '.join(display_cell(*h) for h in path)}")
+            elif cmd == 'formation':
+                # formation <name> <ahead|abreast|echelon> [right|left] [absolute|relative] [echelon_deg]
+                name = args[0]
+                f = g._get(name)
+                f.formation_kind = args[1].lower()
+                if len(args) > 2: f.deploy = args[2].lower()
+                if len(args) > 3: f.pos_mode = args[3].lower()
+                if len(args) > 4: f.echelon_deg = float(args[4])
+                if f.pos_mode == formation.ABS_MODE:
+                    f.layout_heading = DIRVEC[f.course]
+                print(f"  ok: {name!r} formation {f.formation_kind}/{f.pos_mode}")
+            elif cmd == 'replay':
+                g.replay_to(int(args[0])); print(f"  ok: replayed to turn {args[0]}")
+                print(g.list_status())
             elif cmd == 'list': print(g.list_status())
             elif cmd == 'vis':
                 v = float(args[0])
