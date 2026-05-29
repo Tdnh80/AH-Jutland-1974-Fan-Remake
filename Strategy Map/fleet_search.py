@@ -60,6 +60,8 @@ DIRECTION_LIST = ['E', 'NE', 'NW', 'W', 'SW', 'SE']
 OPPOSITE = {'E': 'W', 'W': 'E', 'NE': 'SW', 'SW': 'NE', 'NW': 'SE', 'SE': 'NW'}
 VALID_SPEEDS = (12, 18, 24)
 VALID_SIDES = ('GB', 'GE')
+STATE_SEARCH = "SEARCH"
+STATE_CONTACT = "CONTACT"
 HEX_PER_CYCLE = {12: 2, 18: 3, 24: 4}
 
 # pixel direction unit vectors (+y = "south"/down on the plot)
@@ -276,6 +278,8 @@ class Game:
         self.visibility = DEFAULT_VISIBILITY
         self.start_minute = 0          # clock time at substep 0
         self.last_report = None        # dict for plotting the encounter marker
+        self.state = STATE_SEARCH
+        self.contact_hexes = set()
         self.rng = random.Random()
 
     @property
@@ -459,6 +463,12 @@ class Game:
             if f.scheduled:
                 self.clear_schedule(f.name)
         self.last_report = dict(substep=self.current_substep, encounters=encounters)
+        hexes = set()
+        for e in encounters:
+            hexes.add(xy_to_hex(*e['gb_xy_roll']))
+            hexes.add(xy_to_hex(*e['ge_xy_roll']))
+        self.contact_hexes = hexes
+        self.state = STATE_CONTACT
         return encounters
 
     # --- reporting ---
