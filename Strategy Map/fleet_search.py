@@ -34,6 +34,8 @@ import shlex
 from dataclasses import dataclass, field, asdict
 import formation
 import journal as journal_mod
+import coords
+import timekeep
 
 
 # ---------------------------------------------------------------------------
@@ -148,11 +150,28 @@ def micro_position(x, y):
     return h, best, dist
 
 
+def parse_cell_or_hex(s):
+    """玩家用字母数字 'A13';开发者仍可用 'q,r'。-> (q, r)。"""
+    try:
+        return coords.parse_cell(s)
+    except ValueError:
+        return parse_hex(s)
+
+
+def display_cell(q, r):
+    """显示用字母数字;地图外行号回退到 (q,r)。"""
+    try:
+        return coords.cell_name(q, r)
+    except ValueError:
+        return hex_name(q, r)
+
+
 def micro_str(x, y):
     h, edge, dist = micro_position(x, y)
+    name = display_cell(*h)
     if edge is None:
-        return f"hex{hex_name(*h)} at centre"
-    return f"hex{hex_name(*h)}  {dist:.0f} yd from centre → {edge} edge"
+        return f"{name} at centre"
+    return f"{name}  {dist:.0f} yd from centre → {edge} edge"
 
 
 def random_walk_path(start, speed, rng, prev_dir=None, straight_bias=0.65,
@@ -299,7 +318,7 @@ class Game:
         if course not in NEIGH: raise ValueError(f"course in {DIRECTION_LIST}")
         if speed not in VALID_SPEEDS: raise ValueError(f"speed in {VALID_SPEEDS}")
         if n < 1: raise ValueError("need >= 1 ship")
-        h = parse_hex(hex_str)
+        h = parse_cell_or_hex(hex_str)
         f = Fleet(name=name, side=side, activated_turn=activated,
                   anchor_xy=hex_center_xy(*h), anchor_substep=activated * 6,
                   course=course, speed=speed,
@@ -315,7 +334,7 @@ class Game:
         f = self._get(name)
         if course not in NEIGH: raise ValueError("bad course")
         if speed not in VALID_SPEEDS: raise ValueError("bad speed")
-        f.anchor_xy = hex_center_xy(*parse_hex(hex_str))
+        f.anchor_xy = hex_center_xy(*parse_cell_or_hex(hex_str))
         f.anchor_substep = self.current_substep
         f.course = course; f.speed = speed
         f.scheduled = False; f.schedule_end_substep = 0.0; f.waypoints = []
@@ -347,7 +366,7 @@ class Game:
         if len(hex_strs) != need:
             raise ValueError(f"{speed}kn needs {need} waypoints, got {len(hex_strs)}")
         cur_hex = xy_to_hex(*f.lead_xy(self.current_substep))
-        wps = [parse_hex(h) for h in hex_strs]
+        wps = [parse_cell_or_hex(h) for h in hex_strs]
         chain = [cur_hex] + wps
         for a, b in zip(chain, chain[1:]):
             if direction_between(a, b) is None:
@@ -370,7 +389,7 @@ class Game:
         path = random_walk_path(cur, speed, self.rng, prev_dir=f.course)
         if len(path) != HEX_PER_CYCLE[speed]:
             raise RuntimeError("random walk hit bound; relocate fleet")
-        self.schedule(name, speed, [hex_name(*h) for h in path])
+        self.schedule(name, speed, [display_cell(*h) for h in path])
         return path
 
     def _get(self, name):
@@ -536,7 +555,7 @@ class Game:
         micro = micro_str(cx, cy)
         if f.scheduled:
             remain = max(0.0, f.schedule_end_substep - self.current_substep)
-            end = hex_name(*f.waypoints[-1]) if f.waypoints else "?"
+            end = display_cell(*f.waypoints[-1]) if f.waypoints else "?"
             st = f"sched→{end} ({remain:.0f}st)"
         else:
             st = "free"
@@ -828,7 +847,7 @@ def main():
             elif cmd == 'randwalk':
                 name = args[0]; spd = int(args[1]) if len(args) > 1 else None
                 path = g.randwalk(name, spd)
-                print(f"  ok: {name!r} randwalk → {' '.join(hex_name(*h) for h in path)}")
+                print(f"  ok: {name!r} randwalk → {' '.join(display_cell(*h) for h in path)}")
             elif cmd == 'list': print(g.list_status())
             elif cmd == 'vis':
                 v = float(args[0])
