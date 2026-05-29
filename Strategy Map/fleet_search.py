@@ -33,6 +33,7 @@ import re
 import shlex
 from dataclasses import dataclass, field, asdict
 import formation
+import journal as journal_mod
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +282,7 @@ class Game:
         self.state = STATE_SEARCH
         self.contact_hexes = set()
         self.rng = random.Random()
+        self.journal = journal_mod.Journal(self.start_minute, self.visibility)
 
     @property
     def current_turn(self):
@@ -409,11 +411,14 @@ class Game:
             pairs = self._cross_pairs(sub)
             hits = [(d, fa, fb) for (d, fa, fb) in pairs if d < self.visibility]
             if hits:
-                return self._resolve_encounter(sub)
+                result = self._resolve_encounter(sub)
+                self.journal.record_turn(self.to_dict())
+                return result
         self.current_substep += 6
         for f in self.fleets.values():
             if f.scheduled and self.current_substep >= f.schedule_end_substep:
                 self._end_schedule(f)
+        self.journal.record_turn(self.to_dict())
         return None
 
     def _end_schedule(self, f):
@@ -602,12 +607,24 @@ class Game:
         self.fleets = {f.name: f for f in (self._fleet_from_dict(d) for d in data['fleets'])}
 
     def save(self, filename):
+        import json as _json
+        payload = {"current": self.to_dict(), "journal": _json.loads(self.journal.to_json())}
         with open(filename, 'w', encoding='utf-8') as fh:
-            json.dump(self.to_dict(), fh, ensure_ascii=False, indent=2)
+            _json.dump(payload, fh, ensure_ascii=False, indent=2)
 
     def load(self, filename):
+        import json as _json
         with open(filename, 'r', encoding='utf-8') as fh:
-            self.load_dict(json.load(fh))
+            payload = _json.load(fh)
+        self.load_dict(payload["current"])
+        self.journal = journal_mod.Journal.from_json(_json.dumps(payload["journal"]))
+
+    def replay_to(self, turn):
+        """把盘面恢复到日志里第 turn 个回合快照(0 起)。不改动日志本身。"""
+        snap = self.journal.snapshot_at_turn(turn)
+        if snap is None:
+            raise IndexError(f"no snapshot for turn {turn}")
+        self.load_dict(snap)
 
 
 # ---------------------------------------------------------------------------
