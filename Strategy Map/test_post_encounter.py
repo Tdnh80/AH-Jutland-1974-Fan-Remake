@@ -56,5 +56,23 @@ class TestAdjacentEntrants(unittest.TestCase):
         self.assertEqual(g.adjacent_entrants(), [])
 
 
+class TestResumeSearch(unittest.TestCase):
+    def test_resume_when_all_pairs_clear(self):
+        g, _ = head_on_to_contact()
+        self.assertEqual(g.state, fs.STATE_CONTACT)
+        # 把双方拉远:所有跨阵营对都 > vis
+        g.relocate("GB1", "0,0", "E", 18)
+        g.relocate("GE1", "20,0", "W", 18)
+        self.assertTrue(g.resume_search_if_clear())
+        self.assertEqual(g.state, fs.STATE_SEARCH)
+        self.assertEqual(g.contact_hexes, set())
+
+    def test_no_resume_while_still_close(self):
+        g, _ = head_on_to_contact()
+        # 不移动:双方仍在接敌格附近,不应脱离
+        self.assertFalse(g.resume_search_if_clear())
+        self.assertEqual(g.state, fs.STATE_CONTACT)
+
+
 if __name__ == '__main__':
     unittest.main()

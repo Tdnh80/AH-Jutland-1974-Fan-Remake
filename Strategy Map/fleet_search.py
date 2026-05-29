@@ -502,6 +502,25 @@ class Game:
                 out.append((f.name, entry, xy_to_hex(*f.lead_xy(entry))))
         return out
 
+    def resume_search_if_clear(self):
+        """CONTACT 态下,若所有原涉及舰队的中心都已驶出接敌格,则脱离接触、回 SEARCH。
+        注意:接敌定格拍本身所有对就 >= vis(干净的接触前状态),所以脱离判据不能用
+        vis 距离(那会在刚接敌时就误判脱离),而要看「中心是否仍在接敌格」。"""
+        if self.state != STATE_CONTACT or not self.last_report:
+            return False
+        involved = set()
+        for e in self.last_report['encounters']:
+            involved.add(e['gb'])
+            involved.add(e['ge'])
+        sub = self.current_substep
+        for name in involved:
+            f = self.fleets.get(name)
+            if f is not None and xy_to_hex(*f.lead_xy(sub)) in self.contact_hexes:
+                return False
+        self.state = STATE_SEARCH
+        self.contact_hexes = set()
+        return True
+
     # --- reporting ---
 
     def status_line(self, f):
