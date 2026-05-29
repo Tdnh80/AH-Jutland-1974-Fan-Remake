@@ -675,6 +675,8 @@ class Game:
 
     def save(self, filename):
         import json as _json
+        self.journal.epoch_minute = self.start_minute
+        self.journal.visibility = self.visibility
         payload = {"current": self.to_dict(), "journal": _json.loads(self.journal.to_json())}
         with open(filename, 'w', encoding='utf-8') as fh:
             _json.dump(payload, fh, ensure_ascii=False, indent=2)
@@ -1063,7 +1065,7 @@ def run_command(game, line):
             print(f"  warning: {v:.0f} > 1 hex ({MAX_VISIBILITY:.0f}); clamping"); v = MAX_VISIBILITY
         g.visibility = v; print(f"  ok: visibility = {v:.0f} yd ({v/HEX_SIDE:.2f} hex)")
     elif cmd == 'time':
-        g.start_minute = timekeep.hhmm_to_min(args[0])
+        g.start_minute = timekeep.parse_time(args[0])
         print(f"  ok: clock starts {g.datestr(0)}")
     elif cmd == 'save':
         g.save(args[0]); print(f"  ok: saved {args[0]!r}")
