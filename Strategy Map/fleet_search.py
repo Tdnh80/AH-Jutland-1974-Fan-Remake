@@ -458,6 +458,18 @@ class Game:
         return best
 
     def step_turn(self):
+        if self.state == STATE_CONTACT:
+            if not self.resume_search_if_clear():
+                # 仍保持接触:推进时间,记录相邻格进入者,不重复回退(否则死锁)
+                self.current_substep += 6
+                for f in self.fleets.values():
+                    if f.is_active(self.current_substep):
+                        f.display_history.append((self.current_substep, *f.lead_xy(self.current_substep)))
+                if self.last_report is not None:
+                    self.last_report['entrants'] = self.adjacent_entrants()
+                self.journal.record_turn(self.to_dict())
+                return None
+            # 已脱离接触 -> 落入下面常规搜索推进
         for offset in range(1, 7):
             sub = self.current_substep + offset
             for f in self.fleets.values():
