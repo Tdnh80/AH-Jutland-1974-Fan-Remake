@@ -471,6 +471,37 @@ class Game:
         self.state = STATE_CONTACT
         return encounters
 
+    def adjacent_entrants(self, lookahead=18):
+        """接敌(CONTACT)态下,未参与的舰队若位于某接敌格的相邻格、且在
+        lookahead 拍内驶入某接敌格,则纳入;返回 [(name, entry_substep, hex)]。
+        始终未驶入(驶离)的不纳入。"""
+        if self.state != STATE_CONTACT or not self.last_report:
+            return []
+        involved = set()
+        for e in self.last_report['encounters']:
+            involved.add(e['gb'])
+            involved.add(e['ge'])
+        adj = set()
+        for ch in self.contact_hexes:
+            for d in NEIGH:
+                adj.add(hex_neighbour(ch, d))
+        sub = self.current_substep
+        out = []
+        for f in self.fleets.values():
+            if f.name in involved or not f.is_active(sub):
+                continue
+            if xy_to_hex(*f.lead_xy(sub)) not in adj:
+                continue
+            entry = None
+            for k in range(1, lookahead + 1):
+                h = xy_to_hex(*f.lead_xy(sub + k))
+                if h in self.contact_hexes:
+                    entry = sub + k
+                    break
+            if entry is not None:
+                out.append((f.name, entry, xy_to_hex(*f.lead_xy(entry))))
+        return out
+
     # --- reporting ---
 
     def status_line(self, f):

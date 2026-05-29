@@ -32,5 +32,29 @@ class TestContactState(unittest.TestCase):
         self.assertEqual(g.current_substep, 10)
 
 
+class TestAdjacentEntrants(unittest.TestCase):
+    def test_entrant_heading_into_contact_hex_is_detected(self):
+        g, _ = head_on_to_contact()       # state=CONTACT, contact_hexes={(2,0)}, sub=10
+        # 第三舰队当前中心在相邻格 (3,0),航向 W(朝接敌格 (2,0))
+        g.add_fleet("X", "GB", 0, "5,0", "W", 18, 1)
+        g.relocate("X", "3,0", "W", 18)   # anchor at current sub, center=(3,0), course W
+        entrants = g.adjacent_entrants()
+        names = [e[0] for e in entrants]
+        self.assertIn("X", names)
+        entry_sub = dict((e[0], e[1]) for e in entrants)["X"]
+        self.assertGreater(entry_sub, g.current_substep)
+
+    def test_entrant_heading_away_is_not_detected(self):
+        g, _ = head_on_to_contact()
+        g.add_fleet("Y", "GB", 0, "5,0", "E", 18, 1)
+        g.relocate("Y", "3,0", "E", 18)   # 航向 E,驶离接敌格
+        names = [e[0] for e in g.adjacent_entrants()]
+        self.assertNotIn("Y", names)
+
+    def test_no_entrants_when_searching(self):
+        g = fs.Game()
+        self.assertEqual(g.adjacent_entrants(), [])
+
+
 if __name__ == '__main__':
     unittest.main()
