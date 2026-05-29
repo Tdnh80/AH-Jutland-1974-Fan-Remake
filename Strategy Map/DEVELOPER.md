@@ -144,10 +144,10 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 ## 运行测试
 
 ```bash
-python -m unittest discover -p "test_*.py" -v
+python -m unittest discover -s tests -t .
 ```
 
-无需 pytest。所有测试均为 stdlib `unittest`。
+测试都在 `tests/` 目录;`-t .` 让项目根进入 import 路径,使测试能 `import fleet_search` 等根模块。无需 pytest,均为 stdlib `unittest`。
 
 | 测试文件 | 覆盖内容 |
 |---|---|

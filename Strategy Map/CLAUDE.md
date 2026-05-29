@@ -32,10 +32,10 @@ python3 fleet_search.py          # 交互式 CLI
 脚本式测试:把命令写进文本文件 `python3 fleet_search.py < scenario.txt`。
 无显示环境下画图 OK(matplotlib Agg 后端)。
 
-**回归测试**(`test_fleet_search.py`,纯 stdlib `unittest`,无需 matplotlib):
+**回归测试**(测试都在 `tests/`,纯 stdlib `unittest`,无需 matplotlib):
 
 ```bash
-python -m unittest test_fleet_search -v
+python -m unittest discover -s tests -t .
 ```
 
 钉住了「锁定的约定」:尺度/视距上限 36000、18kn=6 拍/格、axial 邻居与反解、鱼贯队距、schedule 校验与 180° 掉头、**接敌回退到 >vis 拍 + =vis 投影**、只判跨阵营。**改这些行为前先看测试是否仍应通过**。无 linter。
