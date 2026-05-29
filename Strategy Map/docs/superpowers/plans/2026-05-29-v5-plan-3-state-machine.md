@@ -249,15 +249,23 @@ Expected: FAIL —— `AttributeError: 'Game' object has no attribute 'resume_se
 
 ```python
     def resume_search_if_clear(self):
-        """CONTACT 态下,若当前所有跨阵营对都 >= vis,则脱离接触、回到 SEARCH。"""
-        if self.state != STATE_CONTACT:
+        """CONTACT 态下,若所有原涉及舰队的中心都已驶出接敌格,则脱离接触、回 SEARCH。
+        注意:接敌定格拍本身所有对就 >= vis(干净的接触前状态),所以脱离判据不能用
+        vis 距离(那会在刚接敌时就误判脱离),而要看「中心是否仍在接敌格」。"""
+        if self.state != STATE_CONTACT or not self.last_report:
             return False
-        pairs = self._cross_pairs(self.current_substep)
-        if all(d >= self.visibility for d, _, _ in pairs):
-            self.state = STATE_SEARCH
-            self.contact_hexes = set()
-            return True
-        return False
+        involved = set()
+        for e in self.last_report['encounters']:
+            involved.add(e['gb'])
+            involved.add(e['ge'])
+        sub = self.current_substep
+        for name in involved:
+            f = self.fleets.get(name)
+            if f is not None and xy_to_hex(*f.lead_xy(sub)) in self.contact_hexes:
+                return False
+        self.state = STATE_SEARCH
+        self.contact_hexes = set()
+        return True
 ```
 
 - [ ] **Step 4: Run to verify it passes + full regression**
@@ -279,7 +287,7 @@ git commit -m "feat: resume SEARCH when contact broken (all pairs >= vis)"
 
 ## Self-Review
 
-- **Spec 覆盖**:§3.5 —— SEARCH/CONTACT 状态(Task 1)、接敌定格沿用 v4(未改)、相邻格自动纳入 + 驶入微观时间(Task 2)、脱离回搜索(Task 3)、同时多处结算(v4 `_resolve_encounter` 的 `involved` 已支持,Task 1 的 `contact_hexes` 聚合多对)、回合计数防 bug(Task 1 `test_no_double_turn_count` 守住)。
+- **Spec 覆盖**:§3.5 —— SEARCH/CONTACT 状态(Task 1)、接敌定格沿用 v4(未改)、相邻格自动纳入 + 驶入微观时间(Task 2)、脱离回搜索(Task 3,判据=涉及中心是否仍在接敌格,而非 vis 距离)、同时多处结算(v4 `_resolve_encounter` 的 `involved` 已支持,Task 1 的 `contact_hexes` 聚合多对)、回合计数防 bug(Task 1 `test_no_double_turn_count` 守住)。
 - **占位符**:无;每步含完整代码与命令。
 - **类型一致**:`STATE_SEARCH/STATE_CONTACT` 常量在实现与测试间一致;`adjacent_entrants` 返回 `[(name, entry_substep, hex)]`;`resume_search_if_clear` 返回 bool;均与测试断言匹配。
 - **离散粒度**:相邻格驶入用按拍采样(10min),与全局检测同粒度,符合 spec「不做连续 CPA」。
