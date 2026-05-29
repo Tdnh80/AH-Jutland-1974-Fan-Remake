@@ -32,6 +32,7 @@ import random
 import re
 import shlex
 from dataclasses import dataclass, field, asdict
+import formation
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +200,12 @@ class Fleet:
     schedule_end_substep: float = 0.0
     waypoints: list = field(default_factory=list)   # axial hexes excl. start
     display_history: list = field(default_factory=list)  # [(substep, x, y)]
+    formation_kind: str = formation.LINE_AHEAD
+    spacing: float = DEFAULT_SPACING
+    deploy: str = "right"
+    echelon_deg: float = 45.0
+    pos_mode: str = formation.REL_MODE
+    layout_heading: tuple = None     # 绝对模式布局时航向;None=用当前航向
 
     def is_active(self, substep):
         return substep >= self.activated_turn * 6
@@ -239,9 +246,23 @@ class Fleet:
         return self._xy_at_arc(self._arc_at(substep))
 
     def ship_positions(self, substep):
-        lead_a = self._arc_at(substep)
-        return [(s.name, self._xy_at_arc(lead_a - i * DEFAULT_SPACING))
-                for i, s in enumerate(self.ships)]
+        if self.formation_kind == formation.LINE_AHEAD:
+            # 单纵:保留 v4 沿航迹鱼贯(turn in succession)
+            lead_a = self._arc_at(substep)
+            return [(s.name, self._xy_at_arc(lead_a - i * self.spacing))
+                    for i, s in enumerate(self.ships)]
+        # 其它队形:中心(沿航迹参考点)+ 队形几何
+        center = self.lead_xy(substep)
+        heading = DIRVEC[self.course]
+        offs = formation.ship_offsets(self.formation_kind, len(self.ships),
+                                      self.spacing, self.deploy, self.echelon_deg)
+        if self.pos_mode == formation.REL_MODE:
+            map_offs = formation.to_map_offsets(heading, offs)
+        else:
+            lh = self.layout_heading if self.layout_heading is not None else heading
+            map_offs = formation.to_map_offsets(lh, offs)
+        pts = formation.place_map(center, map_offs)
+        return [(s.name, p) for s, p in zip(self.ships, pts)]
 
 
 # ---------------------------------------------------------------------------
