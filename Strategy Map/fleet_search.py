@@ -1100,6 +1100,33 @@ def run_command(game, line):
         print(f"  unknown command: {cmd!r}")
 
 
+PLAYER_COMMANDS = {'new', 'relocate', 'course', 'clear', 'schedule', 'randwalk', 'formation'}
+
+
+def authorize_player_command(game, side, line):
+    """裁判机:判断某一方是否有权执行该命令。返回 (ok, reason)。
+    只允许作用于己方的玩家命令;查询/全局命令(list/step/demo/save/load/plot/replay/vis/time)
+    属裁判,客户端拒绝(也避免 output 泄漏敌方)。"""
+    try:
+        parts = shlex.split(line)
+    except ValueError:
+        return False, "parse error"
+    if not parts:
+        return False, "empty command"
+    cmd, args = parts[0].lower(), parts[1:]
+    if cmd not in PLAYER_COMMANDS:
+        return False, f"'{cmd}' is referee-only for players"
+    if cmd == 'new':
+        if len(args) >= 2 and args[1].upper() == side:
+            return True, ""
+        return False, "cannot create a fleet for the other side"
+    name = args[0] if args else ""
+    f = game.fleets.get(name)
+    if f is not None and f.side != side:
+        return False, "not your fleet"
+    return True, ""
+
+
 def execute_command(game, line):
     """像 run_command,但捕获输出为字符串返回(供服务器用)。QuitSignal -> 返回 '__QUIT__'。"""
     buf = io.StringIO()

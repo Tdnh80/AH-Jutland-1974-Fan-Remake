@@ -38,7 +38,11 @@ class JutlandServer:
                 msg = json.loads(raw)
                 line = msg.get("cmd", "")
                 with self.lock:
-                    out = fs.execute_command(self.game, line)
+                    ok, reason = fs.authorize_player_command(self.game, side, line)
+                    if ok:
+                        out = fs.execute_command(self.game, line)
+                    else:
+                        out = f"  refused: {reason}"
                     view = fs.view_for_side(self.game, side)
                 self._send(f, {"output": out, "view": view})
         except (OSError, ValueError):
