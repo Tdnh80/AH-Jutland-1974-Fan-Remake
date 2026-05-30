@@ -133,6 +133,22 @@ def xy_to_hex(x, y):
     return (rx, rz)
 
 
+def next_cell_center_along(P, course):
+    """从精确点 P 沿 course 方向前方的下一个六角格心(精确坐标)。
+
+    相邻格心沿任一正方向间距 = HEX_SIDE(36000)。把 P 投影到「过 P 所在格心、
+    方向 DIRVEC[course]」的轴上,取该轴上前方第一个格心。P 恰在格心时返回沿
+    course 的相邻格心(turn 距离 = 36000)。EPS 防止 P 在格心时取到自身。
+    """
+    EPS = 1e-6
+    dx, dy = DIRVEC[course]
+    cx, cy = hex_center_xy(*xy_to_hex(*P))
+    s = (P[0] - cx) * dx + (P[1] - cy) * dy       # P 沿 course 轴的投影(相对格心)
+    k = math.ceil((s + EPS) / HEX_SIDE)
+    s_next = k * HEX_SIDE
+    return (cx + s_next * dx, cy + s_next * dy)
+
+
 def hex_neighbour(h, d):
     dq, dr = NEIGH[d]
     return (h[0] + dq, h[1] + dr)
@@ -288,6 +304,13 @@ class Fleet:
     display_history: list = field(default_factory=list)  # [(substep, x, y)]
     initial_course: str = None       # course anchored at layout time (0deg axis for L/R/F/B)
     formations: list = field(default_factory=list)   # >=1 Formation (lower layer)
+    # course-queue (v6 §5): a course change waits until the lead reaches the next hex
+    # centre, then pivots there.  Speed also queues to the same centre.
+    pending_course: str = None
+    pending_speed: int = None
+    pending_turn_xy: tuple = None    # precomputed next hex centre to turn at
+    incoming_dir: tuple = None       # old-course unit vec; trailing ships roll back along
+                                     # it after a turn (succession stays on the entry leg)
 
     def __post_init__(self):
         if self.initial_course is None:
@@ -372,6 +395,12 @@ class Fleet:
     def _xy_at_arc(self, arc):
         poly = self._polyline()
         if arc <= 0:
+            # trailing ships (negative arc) after a queued turn must roll back along the
+            # OLD course (entry leg), not the new heading — that is the succession shape.
+            if not self.scheduled and self.incoming_dir is not None:
+                ix, iy = self.incoming_dir
+                ax, ay = self.anchor_xy
+                return (ax + arc * ix, ay + arc * iy)
             (x0, y0), (x1, y1) = poly[0], poly[1]
             dx, dy = x1 - x0, y1 - y0
             d = math.hypot(dx, dy) or 1.0
@@ -603,14 +632,19 @@ class Game:
         f.display_history = [(self.current_substep, *f.anchor_xy)]
 
     def course_change(self, name, course, speed=None):
+        """登记排队转向:不立即改向,而是驶到当前航向前方的下一格心再转(§5)。
+        速度变化也排队到同一格心生效。再发当前航向 = 取消排队。"""
         f = self._get(name)
         if course not in NEIGH: raise ValueError("bad course")
         if speed is not None and speed not in VALID_SPEEDS: raise ValueError("bad speed")
         if f.scheduled: raise ValueError(f"{name!r} has an active schedule; clear it first")
-        f.anchor_xy = f.lead_xy(self.current_substep)   # exact, no snap
-        f.anchor_substep = self.current_substep
-        f.course = course
-        if speed is not None: f.speed = speed
+        if course == f.course and (speed is None or speed == f.speed):
+            f.pending_course = f.pending_speed = f.pending_turn_xy = None
+            return
+        P = f.lead_xy(self.current_substep)
+        f.pending_course = course
+        f.pending_speed = speed
+        f.pending_turn_xy = next_cell_center_along(P, f.course)
 
     def clear_schedule(self, name):
         f = self._get(name)
@@ -702,6 +736,8 @@ class Game:
             # 已脱离接触 -> 落入下面常规搜索推进
         for offset in range(1, 7):
             sub = self.current_substep + offset
+            # 待转向先于记录与接敌判定生效:旗舰本拍越过转向格心则在此 pivot
+            self._check_pending_turns(sub)
             for f in self.fleets.values():
                 if f.is_active(sub):
                     f.display_history.append((sub, *f.lead_xy(sub)))
@@ -728,6 +764,37 @@ class Game:
             d = direction_between(f.waypoints[-2] if len(f.waypoints) >= 2 else xy_to_hex(*f.anchor_xy), last)
             if d: f.course = d
         f.scheduled = False; f.schedule_end_substep = 0.0; f.waypoints = []
+
+    def _apply_pending_turn(self, f, t_hit):
+        """旗舰抵达 pending_turn_xy(格心)那刻应用排队转向(类比 _end_schedule)。
+        钉锚到该格心、anchor_substep=t_hit(可 float)、改 course、若有则改 speed、
+        记下旧航向供后船弧长回退(鱼贯),清空三个 pending 字段。"""
+        f.incoming_dir = DIRVEC[f.course]
+        f.anchor_xy = f.pending_turn_xy
+        f.anchor_substep = t_hit
+        f.course = f.pending_course
+        if f.pending_speed is not None:
+            f.speed = f.pending_speed
+        f.pending_course = None
+        f.pending_speed = None
+        f.pending_turn_xy = None
+
+    def _check_pending_turns(self, sub):
+        """单拍推进中检测:旗舰本拍越过 pending_turn_xy 则在精确分数拍 t_hit 转向。
+        单拍弧长 <= 24*333.33 ~ 8000 < 36000,一拍内最多触发一次。"""
+        EPS = 1e-6
+        for f in self.fleets.values():
+            if f.pending_course is None or f.scheduled or not f.is_active(sub):
+                continue
+            dx, dy = DIRVEC[f.course]
+            turn_arc = ((f.pending_turn_xy[0] - f.anchor_xy[0]) * dx +
+                        (f.pending_turn_xy[1] - f.anchor_xy[1]) * dy)
+            rate = f.speed * STEP_YARDS_PER_KNOT
+            arc_prev = (sub - 1 - f.anchor_substep) * rate
+            arc_now = (sub - f.anchor_substep) * rate
+            if arc_prev < turn_arc <= arc_now + EPS:
+                t_hit = f.anchor_substep + turn_arc / rate
+                self._apply_pending_turn(f, t_hit)
 
     def _resolve_encounter(self, S):
         """S = first substep with any cross pair < vis.  Roll back to S-1."""
@@ -764,6 +831,7 @@ class Game:
         for f in self.fleets.values():
             if f.scheduled:
                 self.clear_schedule(f.name)
+            f.pending_course = f.pending_speed = f.pending_turn_xy = None
         self.last_report = dict(substep=self.current_substep, encounters=encounters)
         hexes = set()
         for e in encounters:
@@ -835,6 +903,9 @@ class Game:
             remain = max(0.0, f.schedule_end_substep - self.current_substep)
             end = display_cell(*f.waypoints[-1]) if f.waypoints else "?"
             st = f"sched→{end} ({remain:.0f}st)"
+        elif f.pending_course is not None:
+            sp = f"@{f.pending_speed}kn" if f.pending_speed else ""
+            st = f"pending→{f.pending_course}{sp} at {display_cell(*xy_to_hex(*f.pending_turn_xy))}"
         else:
             st = "free"
         return (f"  {f.name:<12} [{f.side}] center={micro}  course={f.course} "
@@ -874,6 +945,10 @@ class Game:
             'scheduled': f.scheduled, 'schedule_end_substep': f.schedule_end_substep,
             'waypoints': [list(w) for w in f.waypoints],
             'display_history': [list(h) for h in f.display_history],
+            'pending_course': f.pending_course,
+            'pending_speed': f.pending_speed,
+            'pending_turn_xy': list(f.pending_turn_xy) if f.pending_turn_xy else None,
+            'incoming_dir': list(f.incoming_dir) if f.incoming_dir else None,
             'formations': [Game._formation_to_dict(fo) for fo in f.formations],
         }
 
@@ -929,6 +1004,12 @@ class Game:
             display_history=[tuple(h) for h in d['display_history']],
             formations=formations,
         )
+        f.pending_course = d.get('pending_course')
+        f.pending_speed = d.get('pending_speed')
+        ptx = d.get('pending_turn_xy')
+        f.pending_turn_xy = tuple(ptx) if ptx else None
+        idr = d.get('incoming_dir')
+        f.incoming_dir = tuple(idr) if idr else None
         return f
 
     def to_dict(self):
@@ -1360,7 +1441,7 @@ Commands
   new <name> <GB|GE> <activated_turn> <cell> <course> <speed> <n_ships>
   delete <name>
   relocate <name> <cell> <course> <speed>
-  course <name> <course> [speed]              (no active schedule)
+  course <name> <course> [speed]              turn queued; applies at next hex centre
   schedule <name> <speed> <cell> <cell> ...   (2/3/4 waypoints; turns & 180 OK)
   clear <name>                                cancel a schedule, keep position
   randwalk <name> [speed]
