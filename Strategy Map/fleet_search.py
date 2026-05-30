@@ -501,11 +501,14 @@ class Game:
         self.fleets[name] = f
 
     def load_order_file(self, path, side, start_hex="0,0", speed=18, activated=0):
-        """读编组文件 -> 每个 OrderFormation 实例化为一个运行期 Fleet。
+        """读编组文件 -> 每个 OrderFleet 实例化为一个运行期 Fleet,
+        其下挂多个 Formation(各自保留相对 Fleet 几何中心的 offset)。
 
-        返回创建的运行期 Fleet 名列表。Fleet 名 = '<OrderFleet>/<Formation>'。
-        absolute 模式懒冻结 frozen_offset_xy(本处 offset 已并入 anchor_xy,
-        运行期 Formation 自身 offset=0,故 frozen_offset_xy=(0,0));relative 留 None。
+        返回创建的运行期 Fleet 名列表。Fleet 名 = '<side> <OrderFleet>'
+        (side 前缀保证全局唯一:GB/GE 都有名为 "BS" 的 Fleet)。
+        Fleet 几何中心锚在 start_hex 格心;各 Formation 的 offset_fwd/offset_left
+        相对该中心,由 ship_positions 两段管线渲染(absolute 懒冻结 frozen_offset_xy,
+        relative 每拍按当前 course 实算)。整组按一个 course/speed 作为一个 Fleet 机动。
         """
         if side not in VALID_SIDES:
             raise ValueError("side must be GB or GE")
@@ -519,37 +522,32 @@ class Game:
             crs = ofleet.initial_course
             if crs not in NEIGH:
                 raise ValueError(f"unsupported initial course {crs!r} in {ofleet.name}")
+            fleet_name = f"{side} {ofleet.name}"
+            if fleet_name in self.fleets:
+                raise ValueError(f"fleet {fleet_name!r} already exists")
+            run_fms = []
             for ofm in ofleet.formations:
-                # side prefix keeps names globally unique when both GB & GE are
-                # loaded into one Game (both sides have a Fleet named "BS" with
-                # overlapping Division names, e.g. "1st Div."/"3rd Div.").
-                fleet_name = f"{side} {ofleet.name}/{ofm.name}"
-                if fleet_name in self.fleets:
-                    raise ValueError(f"fleet {fleet_name!r} already exists")
-                anchor = orderparse.local_to_map(center, crs,
-                                                 ofm.offset_fwd, ofm.offset_left)
-                ships = [Ship(name=f"{fleet_name}-{i+1}", index=i)
-                         for i in range(ofm.n_ships)]
-                relative = ofm.relative
                 turning = ofm.turning if ofm.turning != "na" else TURN_FOLLOW
-                run_fm = Formation(
+                ships = [Ship(name=f"{ofm.name}-{i+1}", index=i)
+                         for i in range(ofm.n_ships)]
+                run_fms.append(Formation(
                     name=ofm.name, ships=ships,
-                    offset_fwd=0.0, offset_left=0.0,
-                    relative=relative, kind=ofm.kind,
+                    offset_fwd=ofm.offset_fwd, offset_left=ofm.offset_left,
+                    relative=ofm.relative, kind=ofm.kind,
                     spacing=ofm.spacing, deploy=ofm.deploy,
                     echelon_deg=ofm.echelon_deg, turning=turning,
-                    frozen_offset_xy=((0.0, 0.0) if relative == REL_ABSOLUTE else None),
+                    frozen_offset_xy=None,   # absolute 模式由 ship_positions 懒冻结
                     note=ofm.note,
-                )
-                f = Fleet(
-                    name=fleet_name, side=side, activated_turn=activated,
-                    anchor_xy=anchor, anchor_substep=activated * 6,
-                    course=crs, speed=speed, initial_course=crs,
-                    formations=[run_fm],
-                )
-                f.display_history.append((activated * 6, *anchor))
-                self.fleets[fleet_name] = f
-                created.append(fleet_name)
+                ))
+            f = Fleet(
+                name=fleet_name, side=side, activated_turn=activated,
+                anchor_xy=center, anchor_substep=activated * 6,
+                course=crs, speed=speed, initial_course=crs,
+                formations=run_fms,
+            )
+            f.display_history.append((activated * 6, *center))
+            self.fleets[fleet_name] = f
+            created.append(fleet_name)
         return created
 
     def add_formation(self, fleet_name, fm_name, n_ships, offset_fwd=0.0, offset_left=0.0,
@@ -1110,78 +1108,103 @@ def plot_state(game, filename):
 
 
 def plot_order(game, filename):
-    """编组校验图:画每个 Fleet(=一个 Formation)的中心、内部 Ship、
-    Initial Course 箭头;带 note 的醒目描边 + 旁注。GB 红 / GE 蓝(锁定)。"""
+    """编组校验图:画每个 Fleet 几何中心、其下每个 Formation 的中心、内部 Ship、
+    Initial Course 箭头;带 note 的 Formation 醒目描边 + 旁注。GB 红 / GE 蓝(锁定)。"""
     try:
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
+        from matplotlib import font_manager
         from matplotlib.patches import Polygon, Circle
     except ImportError:
         raise RuntimeError("matplotlib not installed; pip install matplotlib")
+
+    # note 旁注含中文(如 6th Div. 推断修正),挑一个能渲染 CJK 的字体,缺则忽略
+    _have = {f.name for f in font_manager.fontManager.ttflist}
+    for _fam in ('Microsoft YaHei', 'SimHei', 'Noto Sans CJK SC', 'Arial Unicode MS'):
+        if _fam in _have:
+            plt.rcParams['font.sans-serif'] = [_fam]
+            plt.rcParams['axes.unicode_minus'] = False
+            break
 
     fleets = list(game.fleets.values())
     if not fleets:
         raise RuntimeError("no fleets to plot; loadorder first")
 
-    pts = []
-    for f in fleets:
-        pts.append(f.lead_xy(f.anchor_substep))
-        for _, p in f.ship_positions(f.anchor_substep):
-            pts.append(p)
-    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-    m = HEX_SIDE * 1.5
-    x_min, x_max = min(xs) - m, max(xs) + m
-    y_min, y_max = min(ys) - m, max(ys) + m
-
-    r_lo = int(math.floor(y_min / (HEX_SIDE * _S3))) - 1
-    r_hi = int(math.ceil(y_max / (HEX_SIDE * _S3))) + 1
-    fig, ax = plt.subplots(figsize=(13, 12))
-    for r in range(r_lo, r_hi + 1):
-        q_lo = int(math.floor(x_min / HEX_SIDE - r / 2.0)) - 1
-        q_hi = int(math.ceil(x_max / HEX_SIDE - r / 2.0)) + 1
-        for q in range(q_lo, q_hi + 1):
-            cx, cy = hex_center_xy(q, r)
-            if not (x_min <= cx <= x_max and y_min <= cy <= y_max):
-                continue
-            ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True, fill=False,
-                                 edgecolor='#d3d3d3', linewidth=0.5))
-
     colors = {'GB': '#a32020', 'GE': '#1f4e8a'}
     arrow_len = HEX_SIDE * 0.6
-    for f in fleets:
-        col = colors[f.side]
-        center = f.lead_xy(f.anchor_substep)
-        # 内部 Ship 点 + 连线
-        ship_pts = [p for _, p in f.ship_positions(f.anchor_substep)]
-        if len(ship_pts) >= 2:
-            ax.plot([p[0] for p in ship_pts], [p[1] for p in ship_pts],
-                    '-', color=col, alpha=0.4, linewidth=1.0)
-        for sx, sy in ship_pts:
-            ax.plot(sx, sy, 'o', color=col, markersize=4,
-                    markeredgecolor='black', markeredgewidth=0.3)
-        # Formation 中心大标记 + 标签
-        ax.plot(center[0], center[1], 's', color=col, markersize=8,
-                markeredgecolor='black', markeredgewidth=0.5, zorder=4)
-        note = getattr(f.formations[0], 'note', '') if f.formations else ''
-        label = f"{f.name}\n{micro_str(*center)}"
-        if note:
-            label += f"\n⚠ {note}"
-            ax.add_patch(Circle(center, HEX_SIDE * 0.25, fill=False,
-                                edgecolor='orange', linewidth=2.0, zorder=3))
-        ax.annotate(label, center, textcoords='offset points', xytext=(6, 6),
-                    fontsize=6, color=col,
-                    weight=('bold' if note else 'normal'))
-        # Initial Course 箭头
-        ux, uy = DIRVEC[f.initial_course]
-        ax.annotate("", xy=(center[0] + arrow_len * ux, center[1] + arrow_len * uy),
-                    xytext=center,
-                    arrowprops=dict(arrowstyle="->", color=col, alpha=0.6, lw=1.0))
 
-    ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
-    ax.set_aspect('equal'); ax.invert_yaxis()
-    ax.set_title("Order of Battle — GB=red GE=blue  (⚠ = inferred decision, verify)")
-    ax.set_xticks([]); ax.set_yticks([])
+    def _draw_fleet(ax, f):
+        """把一个 Fleet 画到 ax:六角网格 + Fleet 几何中心 + Initial Course 箭头
+        + 其下每个 Formation 的中心/内部 Ship/note 高亮,范围自适应该 Fleet。"""
+        col = colors[f.side]
+        sub = f.anchor_substep
+        fcenter = f.lead_xy(sub)
+        fm_data = []
+        pts = [fcenter]
+        for fo in f.formations:
+            c = f._formation_center_xy(fo, sub)
+            sp = [p for _, p in f._formation_ship_positions(fo, sub)]
+            fm_data.append((fo, c, sp))
+            pts.append(c); pts.extend(sp)
+        xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+        m = HEX_SIDE * 0.9
+        x_min, x_max = min(xs) - m, max(xs) + m
+        y_min, y_max = min(ys) - m, max(ys) + m
+
+        r_lo = int(math.floor(y_min / (HEX_SIDE * _S3))) - 1
+        r_hi = int(math.ceil(y_max / (HEX_SIDE * _S3))) + 1
+        for r in range(r_lo, r_hi + 1):
+            q_lo = int(math.floor(x_min / HEX_SIDE - r / 2.0)) - 1
+            q_hi = int(math.ceil(x_max / HEX_SIDE - r / 2.0)) + 1
+            for q in range(q_lo, q_hi + 1):
+                cx, cy = hex_center_xy(q, r)
+                if not (x_min <= cx <= x_max and y_min <= cy <= y_max):
+                    continue
+                ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True, fill=False,
+                                     edgecolor='#d3d3d3', linewidth=0.5))
+
+        ax.plot(fcenter[0], fcenter[1], 's', color=col, markersize=11, fillstyle='none',
+                markeredgecolor=col, markeredgewidth=1.6, zorder=5)
+        ux, uy = DIRVEC[f.initial_course]
+        ax.annotate("", xy=(fcenter[0] + arrow_len * ux, fcenter[1] + arrow_len * uy),
+                    xytext=fcenter,
+                    arrowprops=dict(arrowstyle="->", color=col, alpha=0.7, lw=1.4))
+        for fo, center, ship_pts in fm_data:
+            if len(ship_pts) >= 2:
+                ax.plot([p[0] for p in ship_pts], [p[1] for p in ship_pts],
+                        '-', color=col, alpha=0.4, linewidth=1.0)
+            for sx, sy in ship_pts:
+                ax.plot(sx, sy, 'o', color=col, markersize=4,
+                        markeredgecolor='black', markeredgewidth=0.3)
+            ax.plot(center[0], center[1], 's', color=col, markersize=6,
+                    markeredgecolor='black', markeredgewidth=0.4, zorder=4)
+            note = getattr(fo, 'note', '')
+            label = fo.name + (f"\n[!] {note}" if note else "")
+            if note:
+                ax.add_patch(Circle(center, HEX_SIDE * 0.25, fill=False,
+                                    edgecolor='orange', linewidth=2.0, zorder=3))
+            ax.annotate(label, center, textcoords='offset points', xytext=(5, 5),
+                        fontsize=6, color=col,
+                        weight=('bold' if note else 'normal'))
+        ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
+        ax.set_aspect('equal'); ax.invert_yaxis()
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_title(f"{f.side}  {f.name}  —  course {f.initial_course}  "
+                     f"({len(f.formations)} formations)", fontsize=9, color=col)
+
+    # 每个 Fleet 一个子图,避免多 Fleet 共起点叠在一起看不清
+    n = len(fleets)
+    ncols = 1 if n == 1 else 2
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(7.5 * ncols, 7.0 * nrows),
+                             squeeze=False)
+    for idx, f in enumerate(fleets):
+        _draw_fleet(axes[idx // ncols][idx % ncols], f)
+    for j in range(n, nrows * ncols):
+        axes[j // ncols][j % ncols].axis('off')
+    fig.suptitle("Order of Battle — GB=red GE=blue  ([!] = inferred decision, verify)",
+                 fontsize=12)
     plt.tight_layout(); plt.savefig(filename, dpi=110, bbox_inches='tight'); plt.close(fig)
 
 
@@ -1425,7 +1448,8 @@ def run_command(game, line):
         start = args[2] if len(args) > 2 else "0,0"
         spd = int(args[3]) if len(args) > 3 else 18
         created = g.load_order_file(path, side, start, speed=spd)
-        print(f"  ok: loaded {len(created)} formation-fleets from {path!r}")
+        nfm = sum(len(g.fleets[n].formations) for n in created)
+        print(f"  ok: loaded {len(created)} fleets ({nfm} formations) from {path!r}: {', '.join(created)}")
     elif cmd == 'add' and args and args[0].lower() == 'formation':
         # add formation <fleet> <fmname> ships <n> [offset <F/B..> <L/R..>] [kind ..]
         #   [spacing <yds>] [deploy left|right] [echelon <deg>] [turning ..] [rel ..]

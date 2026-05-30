@@ -272,73 +272,91 @@ import fleet_search as fs
 
 
 class TestLoadOrder(unittest.TestCase):
-    def test_fleet_count_equals_total_formations_gb(self):
-        # 端到端:每个 OrderFormation -> 一个运行期 Fleet
+    def test_load_creates_two_nested_fleets_gb(self):
+        # 端到端:每个 OrderFleet -> 一个运行期 Fleet,Division 嵌为其 formations
         g = fs.Game()
         names = g.load_order_file(GB_FILE, "GB", "0,0")
-        # GB: BS 13 + BCF 6 = 19
-        self.assertEqual(len(names), 19)
-        self.assertEqual(len(g.fleets), 19)
+        self.assertEqual(len(names), 2)            # BS + BCF
+        self.assertEqual(len(g.fleets), 2)
+        bs = g.fleets["GB BS"]
+        bcf = g.fleets["GB BCF"]
+        self.assertEqual(len(bs.formations), 13)
+        self.assertEqual(len(bcf.formations), 6)
 
-    def test_fleet_count_equals_total_formations_ge(self):
+    def test_load_creates_two_nested_fleets_ge(self):
         g = fs.Game()
         names = g.load_order_file(GE_FILE, "GE", "0,0")
-        # GE: BS 12 + SG 6 = 18
-        self.assertEqual(len(names), 18)
-        self.assertEqual(len(g.fleets), 18)
+        self.assertEqual(len(names), 2)            # BS + SG
+        self.assertEqual(len(g.fleets), 2)
+        self.assertEqual(len(g.fleets["GE BS"].formations), 12)
+        self.assertEqual(len(g.fleets["GE SG"].formations), 6)
 
     def test_loaded_fleet_side_and_course(self):
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
-        any_gb = next(iter(g.fleets.values()))
-        self.assertEqual(any_gb.side, "GB")
+        bs = g.fleets["GB BS"]
+        self.assertEqual(bs.side, "GB")
         # initial_course propagated; default speed 18
-        self.assertEqual(any_gb.initial_course, "SE")
-        self.assertEqual(any_gb.course, "SE")
-        self.assertEqual(any_gb.speed, 18)
+        self.assertEqual(bs.initial_course, "SE")
+        self.assertEqual(bs.course, "SE")
+        self.assertEqual(bs.speed, 18)
 
-    def test_anchor_matches_local_to_map(self):
-        # 某个非零偏移 Formation 的 anchor_xy 应等于 local_to_map(中心, initial_course, fwd, left)
+    def test_fleet_center_at_start_hex_formation_keeps_offset(self):
+        # Fleet 几何中心锚在起始格心;非零偏移 Formation 自身保留 offset,
+        # 其渲染中心 = local_to_map(中心, initial_course, fwd, left)。
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
         center = fs.hex_center_xy(0, 0)
-        # 3BCS: offset (32400F, 13000L), initial_course SE
-        f = [f for f in g.fleets.values() if f.name.endswith("3BCS")][0]
+        bs = g.fleets["GB BS"]
+        self.assertAlmostEqual(bs.anchor_xy[0], center[0], places=3)
+        self.assertAlmostEqual(bs.anchor_xy[1], center[1], places=3)
+        # 3BCS: offset (32400F, 13000L), initial_course SE, absolute
+        fm = [m for m in bs.formations if m.name == "3BCS"][0]
+        self.assertEqual((fm.offset_fwd, fm.offset_left), (32400.0, 13000.0))
         want = op.local_to_map(center, "SE", 32400.0, 13000.0)
-        self.assertAlmostEqual(f.anchor_xy[0], want[0], places=3)
-        self.assertAlmostEqual(f.anchor_xy[1], want[1], places=3)
+        got = bs._formation_center_xy(fm, bs.anchor_substep)
+        self.assertAlmostEqual(got[0], want[0], places=3)
+        self.assertAlmostEqual(got[1], want[1], places=3)
 
-    def test_zero_offset_formation_at_center(self):
-        # GE SG 1SG offset 0 -> anchor 在起始格心
+    def test_zero_offset_formation_at_fleet_center(self):
+        # GE SG 1SG offset 0 -> 渲染中心 == Fleet 几何中心(起始格心)
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
         center = fs.hex_center_xy(0, 0)
-        f = [f for f in g.fleets.values() if f.name.endswith("1SG")][0]
-        self.assertAlmostEqual(f.anchor_xy[0], center[0], places=3)
-        self.assertAlmostEqual(f.anchor_xy[1], center[1], places=3)
+        sg = g.fleets["GE SG"]
+        fm = [m for m in sg.formations if m.name == "1SG"][0]
+        self.assertEqual((fm.offset_fwd, fm.offset_left), (0.0, 0.0))
+        got = sg._formation_center_xy(fm, sg.anchor_substep)
+        self.assertAlmostEqual(got[0], center[0], places=3)
+        self.assertAlmostEqual(got[1], center[1], places=3)
 
-    def test_each_loaded_fleet_single_formation_with_ships(self):
+    def test_bs_fleet_holds_all_divisions_with_ships(self):
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
-        f = [f for f in g.fleets.values() if f.name.endswith("3rd Div.")][0]
-        self.assertEqual(len(f.formations), 1)
-        self.assertEqual(len(f.formations[0].ships), 4)
+        bs = g.fleets["GB BS"]
+        third = [m for m in bs.formations if m.name == "3rd Div."][0]
+        self.assertEqual(len(third.ships), 4)
 
-    def test_save_load_roundtrip_preserves_anchor(self):
+    def test_save_load_roundtrip_preserves_offsets(self):
         import tempfile, os as _os
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
-        f0 = [f for f in g.fleets.values() if f.name.endswith("Stettin")][0]
-        anchor0 = tuple(f0.anchor_xy)
+        bs = g.fleets["GE BS"]
+        anchor0 = tuple(bs.anchor_xy)
+        st0 = [m for m in bs.formations if m.name == "Stettin"][0]
+        off0 = (st0.offset_fwd, st0.offset_left)
         fd, path = tempfile.mkstemp(suffix=".json")
         _os.close(fd)
         try:
             g.save(path)
             g2 = fs.Game()
             g2.load(path)
-            f1 = [f for f in g2.fleets.values() if f.name.endswith("Stettin")][0]
-            self.assertAlmostEqual(f1.anchor_xy[0], anchor0[0], places=3)
-            self.assertAlmostEqual(f1.anchor_xy[1], anchor0[1], places=3)
+            bs2 = g2.fleets["GE BS"]
+            self.assertAlmostEqual(bs2.anchor_xy[0], anchor0[0], places=3)
+            self.assertAlmostEqual(bs2.anchor_xy[1], anchor0[1], places=3)
+            self.assertEqual(len(bs2.formations), 12)
+            st1 = [m for m in bs2.formations if m.name == "Stettin"][0]
+            self.assertEqual((st1.offset_fwd, st1.offset_left), off0)
         finally:
             _os.remove(path)
 
@@ -394,8 +412,9 @@ class TestOrderCLI(unittest.TestCase):
     def test_loadorder_cli(self):
         g = fs.Game()
         out = fs.execute_command(g, f'loadorder GB "{GB_FILE}" 0,0')
-        self.assertEqual(len(g.fleets), 19)
-        self.assertIn("19", out)
+        self.assertEqual(len(g.fleets), 2)
+        self.assertIn("2 fleets", out)
+        self.assertIn("19 formations", out)
 
     def test_add_formation_cli(self):
         g = fs.Game()
