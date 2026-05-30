@@ -1,4 +1,4 @@
-# 开发者文档 — 日德兰搜索·接敌裁判工具 (v5)
+# 开发者文档 — 日德兰搜索·接敌裁判工具 (v6)
 
 面向贡献者和二次开发者。使用者请看 [README.md](README.md)。
 
@@ -10,9 +10,11 @@
 |---|---|
 | `coords.py` | 字母数字格名 ↔ axial (q,r) 的双向转换 |
 | `timekeep.py` | 时间模型:绝对分钟 ↔ HHMM ↔ DD/MM/YY HHMM |
-| `formation.py` | 队形几何:偏移量计算、相对/绝对两种布局模式 |
-| `journal.py` | 操作日志:命令记录 + 回合快照 + JSON 序列化 |
-| `fleet_search.py` | 引擎核心 + CLI:坐标/显示 helper、Game 类、plot、demo、main() |
+| `formation.py` | 队形纯几何:队内各船偏移、相对/绝对布局旋转 |
+| `orderparse.py` | 读 `GB/GEformation.txt` → 中间 dataclass → 实例化三层模型 |
+| `journal.py` | 操作日志:命令记录 + 回合快照(turn-key)+ JSON 序列化 |
+| `server.py` / `client.py` | 双盲裁判机(TCP/JSON-line)+ CLI 客户端 |
+| `fleet_search.py` | 引擎核心 + CLI:`Game`/`Fleet`/`Formation`/`Ship`、几何、course 排队、plot、demo、main() |
 
 ---
 
@@ -94,50 +96,87 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 
 ---
 
-## 队形模块
+## 三层编组模型(v6)
 
-`formation.py` 常量:
+`Fleet → Formation → Ship` 三层(`fleet_search.py`):
 
-- `LINE_AHEAD = "ahead"`, `LINE_ABREAST = "abreast"`, `ECHELON = "echelon"`
-- `REL_MODE = "relative"`, `ABS_MODE = "absolute"`
+- **`Fleet`**:阵营 + 运动学。几何中心精确 `anchor_xy`、`anchor_substep`(可 float)、`initial_course`、`course`、`speed`、`formations: list`(≥1)。一条中心折线是唯一真相源。
+- **`Formation`**(= Division / 单舰单元):`offset_fwd`(F+/B−)、`offset_left`(L+/R−,基于 `initial_course` 为 0° 轴)、`relative`(absolute/relative)、`kind`(ahead/abreast/echelon/single)、`spacing`、`deploy`、`echelon_deg`、`turning`(follow/together)、`ships`、`frozen_offset_xy`(absolute 懒冻结)、`note`。`is_single` = 1 船或 kind==single。
+- **`Ship`**:`name` + `index`;精确 xy 派生,不落盘。
 
-`ship_offsets(kind, n, spacing, deploy, echelon_deg)` 返回在**队形坐标系**中各船相对中心的偏移(前后轴 × 左右轴)。
+**向后兼容(零回归关键)**:`Fleet` 的旧字段 `formation_kind/spacing/deploy/echelon_deg/pos_mode/layout_heading/ships` 都改成**委托到主 Formation(`formations[0]`)的 property**;`pos_mode` 无损因为 `formation.ABS_MODE/REL_MODE` 字符串值与 `REL_ABSOLUTE/REL_RELATIVE` 相同。读旧档 `upgrade_v5_fleet` 升级为单零偏移 Formation。
 
-`to_map_offsets(heading, offsets)` 把队形坐标系的偏移旋转到地图像素坐标系。
+## 四种转向几何(给定时刻算每艘 Ship 精确 xy)
 
-`Fleet.ship_positions(substep)`:
-- `LINE_AHEAD`:沿航迹鱼贯(turn in succession),各船延迟固定码数沿同一折线。
-- 其余:以 `lead_xy` 为中心,按 `formation.py` 的几何计算各船绝对像素位置。
-  - `REL_MODE`:布局方向跟随当前 `f.course`。
-  - `ABS_MODE`:布局方向用 `f.layout_heading`(设 formation 命令时冻结)。
+两个正交旋钮:`relative`(Formation 相对 Fleet)× `turning`(Formation 内 Ship)。
+
+| 命名 | relative × turning | 几何 |
+|---|---|---|
+| Turn in Succession | absolute + follow | 沿 Fleet 折线鱼贯 + 冻结平移 |
+| Turn Together | absolute + together | 刚体平移,偏移冻结地图方位 |
+| Compass Turn | relative + follow | 整列随当前航向旋转 |
+| 第四种(罕见) | relative + together | 退化为 Compass |
+
+**解耦原则**:`turning` 管中心航迹 + 内部跟随,`relative` 仅管偏移基准航向,**不二次旋转**。
+
+`formation.py` 常量:`LINE_AHEAD/ABREAST/ECHELON`、`ABS_MODE/REL_MODE`;`ship_offsets`/`to_map_offsets`/`place_map` 纯几何。
+`fleet_search.py` 旋钮常量:`TURN_FOLLOW/TURN_TOGETHER`、`REL_ABSOLUTE/REL_RELATIVE`、`KIND_AHEAD/ABREAST/ECHELON/SINGLE`。
+
+`Fleet.ship_positions(substep)` 两段式:
+1. `_formation_center_xy(fo, sub)` = `lead_xy(sub)` + 旋转偏移(absolute 用 `initial_course` 懒冻结进 `frozen_offset_xy`;relative 用当前 `course` 实算)。
+2. `_formation_ship_positions(fo, sub)`:`follow`+`ahead` 走弧长回退(`_xy_at_arc(lead_arc − i·spacing)` + 平移);其余走 `formation.ship_offsets`→`to_map_offsets`→`place_map` 刚体。
+对外仍返回扁平 `[(name, xy), …]`,零偏移单 Formation 与旧鱼贯/刚体逐船等价。
+
+## course 排队转向(v6)
+
+`course` 不再原地即时转,而是登记待转向,旗舰驶到下一格心才 pivot:
+
+- `Fleet.pending_course / pending_speed / pending_turn_xy`:`course_change` 用 `next_cell_center_along(P, 当前course)` 算转向格心并登记(speed 也排队到同一格心)。再发当前航向 = 取消排队;有 schedule 时仍抛错。
+- `next_cell_center_along(P, course)`(模块级):P 投影到过所在格心、方向 `DIRVEC[course]` 的轴,取前方第一格心(EPS 防 P 在格心取自身)。相邻格心沿任一正方向间距 = `HEX_SIDE`。
+- `_check_pending_turns(sub)`:每拍判 `arc_prev < turn_arc ≤ arc_now+EPS`,命中则在精确分数拍 `t_hit = anchor_substep + turn_arc/(speed·STEP)` 调 `_apply_pending_turn`。单拍弧长 ≤ 8000 < 36000,一拍最多触发一次。
+- `_apply_pending_turn(f, t_hit)`:钉锚到格心、`anchor_substep=t_hit`、改 course/(speed)、记 `incoming_dir = DIRVEC[旧course]`、清 pending、**把 `(t_hit, 格心)` 插进 `display_history`**(绘图航迹在格心拐弯,不切角)。
+- `_xy_at_arc` 负弧分支:非 scheduled 且有 `incoming_dir` 时沿旧航向反推,使后船在到达同一格心前留在进入腿上(真鱼贯)。
+- 进 CONTACT(`_resolve_encounter`)清空所有 fleet 的 pending。180° 掉头简化为排队到前方格心反向。
+
+## 编组导入(orderparse)
+
+`orderparse.parse_battle_file(path, side)` → `Battle`(若干 `OrderFleet`,各挂 `OrderFormation`)。
+- `parse_relative_position("8000F 10000L")` → `(fwd, left)`(F+/B−/L+/R−,多分量相加,容错全角空格)。
+- `local_to_map(center, course, fwd, left)`:`forward_hat=DIRVEC[course]`、`left_hat=(fy,−fx)`(+y 朝南的左舷法向)。
+- 表头行只取每个 Fleet 的 Initial Course;数据行按全角破折号 `—` 切列,末列=Relative、倒二列=RelPos、中段扫 kind/spacing/deploy/turning。
+- 同名 Formation 加 `#k` 后缀消歧(如 GB BS 两组 `2CS`→`2CS#1/#2`)。**编组文件是权威数据,不做推断修正。**
+
+`Game.load_order_file(path, side, start_hex, speed, activated)`:**每个 OrderFleet → 一个运行期 Fleet**(GB→`GB BS`+`GB BCF`,GE→`GE BS`+`GE SG`),Division 嵌为其 `formations`、各自保留 offset;Fleet 几何中心锚在 `start_hex` 格心。整组作为一个 Fleet 机动。
 
 ---
 
-## 操作日志(Journal)
+## 操作日志(Journal)— turn-key(v6)
 
-`journal.Journal` 维护两个列表:
+`journal.Journal`:
+- `history`:每条 CLI 命令的 `{sim_min, cmd}`。
+- `turns`:`[{turn, snapshot}]`,**turn = `snapshot["current_substep"] // 6`**。`record_turn` 同回合号**覆盖**(接敌回退快照 substep 非 6 倍数,归入其 //6 回合作为该回合定格态,不另占槽)。`snapshot_at_turn(turn)` 按 turn 号查找(非裸下标)。`from_json` 规整旧档(裸快照列表)。
 
-- `commands`:每条 CLI 命令的 `(abs_minute, text)` 记录。
-- `turn_snapshots`:每个 `step_turn()` 结束时的 `Game.to_dict()` 快照。
-
-`Game.save(filename)` 把 `{"current": ..., "journal": ...}` 一起写入 JSON。
-`Game.load(filename)` 恢复盘面 + 日志。
-`Game.replay_to(turn)` 从 `journal.snapshot_at_turn(turn)` 恢复盘面(不改动日志本身)。
+`Game.step_turn()` 入口:若 `journal.turns` 空,先补记 **turn 0**(初始局面),使 `replay 0` 还原起始盘面。
+`Game.save/load`:`{"current": to_dict(), "journal": ...}`,version=6。
+`Game.replay_to(turn)`:`snapshot_at_turn(turn)`→`load_dict`,恢复后 `current_substep`/clock/位置/state 自洽;越界抛 `IndexError`。
 
 ---
 
 ## 绘图
 
-- `plot_state(game, filename)`:全局图,范围自适应所有舰队的历史轨迹与计划路线。
-- `plot_encounter_closeup(game, filename)`:接敌特写图,范围限定在 `contact_hexes` 及其邻格。若 `contact_hexes` 为空则退化为 `plot_state`。
-- 两者均用 `matplotlib.use('Agg')` 非交互模式,`matplotlib` 不可用时抛 `RuntimeError`。
+- `plot_state(game, filename)`:全局图,范围自适应所有舰队历史轨迹与计划路线。过去航迹由 `display_history` 连线(转向格心顶点已在 `_apply_pending_turn` 插入,故在格心拐弯)。
+- `plot_order(game, filename)`:编组校验图,**每个 Fleet 一个自适应子图**;画 Fleet 几何中心(空心方块)+ Initial Course 箭头 + 各 Formation 中心/内部 Ship;带 `note` 的 Formation 橙圈高亮。自动挑 CJK 字体渲染中文 note。
+- `plot_encounter_closeup(game, filename)`:接敌特写,范围限定 `contact_hexes` 及邻格;空则退化为 `plot_state`。
+- 均 `matplotlib.use('Agg')`,`matplotlib` 不可用时抛 `RuntimeError`。
 
 ---
 
-## 随机走
+## 随机走 / demo
 
-- `random_walk_path(start, speed, rng, prev_dir, straight_bias, bound)`:带直行偏置的随机走,返回 `HEX_PER_CYCLE[speed]` 个相邻格的列表。
-- `attracted_walk_path(start, target, speed, rng, prev_dir, pull, bound)`:每步以概率 `pull` 选择使到 `target` 轴向距离最小的邻格,否则退化为一步 `random_walk_path`。`run_demo` 用此函数实现随回合递增吸引因子(保证长 demo 收敛接敌)。
+- `random_walk_path(start, speed, rng, prev_dir, straight_bias, bound)`:带直行偏置的随机走,返回 `HEX_PER_CYCLE[speed]` 个相邻格。`randwalk` 命令用。
+- `_axial_dist(a, b)`:两 axial 格的六角格距(cube)。
+- `run_demo(g, seed=0, max_turns=30, frame_prefix, plot=True)`:两队用 **course 排队转向**朝对方机动(`steer` 每回合朝目标方向下 `course`,40% 偏到相邻方向制造可见折线但不反向),产生折线航迹并多在 40 回合内接敌。**seed 默认 0 可复现**;`plot=False` 时不画图(测试用,快、无需 matplotlib)。
+- `attracted_walk_path(...)` 仍在(早期 demo 用),现 `run_demo` 不再依赖。
 
 ---
 
@@ -147,24 +186,28 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 python -m unittest discover -s tests -t .
 ```
 
-测试都在 `tests/` 目录;`-t .` 让项目根进入 import 路径,使测试能 `import fleet_search` 等根模块。无需 pytest,均为 stdlib `unittest`。
+测试都在 `tests/`;`-t .` 让项目根进 import 路径。无需 pytest,均为 stdlib `unittest`;含 matplotlib 的用例 import 失败时 skip。
 
 | 测试文件 | 覆盖内容 |
 |---|---|
 | `test_coords.py` | 字母数字格名双向转换、边界、异常 |
 | `test_timekeep.py` | 时间格式化、hhmm_to_min、fmt_date |
-| `test_fleet_search.py` | 几何函数、速度常量、接敌回退、队形、存档 |
-| `test_formation.py` | 偏移量计算、相对/绝对模式 |
+| `test_fleet_search.py` | 几何函数、速度常量、接敌回退、存档 |
+| `test_formation.py` | `formation.py` 偏移量、相对/绝对模式 |
+| `test_formation_layers.py` | 三层模型 + 两段式 `ship_positions` + 四转向 + 零回归等价性 |
 | `test_formation_integration.py` | 队形与 Fleet/Game 集成 |
-| `test_journal.py` | Journal JSON 序列化 |
-| `test_journal_integration.py` | 日志与 Game 集成、replay |
+| `test_course_queue.py` | `next_cell_center_along`、course 排队、`_apply_pending_turn`、到格心才转、鱼贯后船、180°、清 pending |
+| `test_orderparse.py` | 编组解析、`local_to_map`、整文件 GB/GE、`loadorder` 嵌套、`_cross_pairs` 下沉 |
+| `test_journal.py` | Journal turn-key、同回合覆盖、旧档规整 |
+| `test_journal_integration.py` | 日志与 Game 集成、turn-0 补记 |
+| `test_replay.py` | replay 时刻/位置/越界、接敌回合不占独立槽 |
+| `test_demo_path.py` | demo 可复现 + 航迹真有转向 |
+| `test_demo_convergence.py` | demo 多种子不崩 + 可复现 |
 | `test_post_encounter.py` | 接敌后状态机(adjacent entrants、resume search) |
-| `test_serialization.py` | 全量 save/load JSON 往返 |
-| `test_cli_coords.py` | parse_cell_or_hex、display_cell、micro_str |
-| `test_cli_time.py` | Game.datestr |
-| `test_cli_smoke.py` | formation/replay CLI 命令冒烟测试 |
-| `test_demo_convergence.py` | attracted_walk_path 收敛性(8 种子 ≥6 在 40 回合内接敌) |
-| `test_closeup_smoke.py` | plot_encounter_closeup 写文件冒烟测试 |
+| `test_serialization.py` | 全量 save/load JSON 往返(version=6 + 兼容旧档) |
+| `test_cli_coords.py` / `test_cli_time.py` / `test_cli_smoke.py` | CLI helper / 命令冒烟 |
+| `test_closeup_smoke.py` | `plot_encounter_closeup` 写文件冒烟 |
+| `test_view_filter.py` / `test_execute_command.py` / `test_server_*.py` / `test_state_machine_loop.py` / `test_journal_header.py` | 双盲视图 / 命令分发 / 裁判机回环与授权 / 状态机循环 / 日志头 |
 
 ---
 
