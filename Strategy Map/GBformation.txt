@@ -16,13 +16,12 @@ GB:
 		1st Div. — 4 — line ahead — space:500yds — Together — 5625L — Absolute
 		4th Div. — 4 — line ahead — space:500yds — Together — 1125R — Absolute
 		5th Div. — 4 — line ahead — space:500yds — Together — 3375R — Absolute
-		6th Div. — 4 — line ahead — space:500yds — Together — 5625L — Absolute
+		6th Div. — 4 — line ahead — space:500yds — Together — 5625R — Absolute
 		4LCS — 5 — line abreast — Deployment direction:R — space:4000yds — Together — 8000F 10000L — Absolute
 		Attached LC L  — 2 — line ahead — space:2000yds — Together — 1000F 8000L — Absolute
 		Attached LC R  — 2 — line ahead — space:2000yds — Together — 1000F 8000R — Absolute
 		2CS — 3 — line abreast — Deployment direction:R — space:12150yds — Together — 26350F 28350L — Absolute
 		2CS — 3 — line abreast — Deployment direction:L — space:12150yds — Together — 26350F 28350R — Absolute
-			下方此处考虑是否坐标变化至下一六角格？作为独立Fleet
 		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Absolute
 		Attached LC — 2 — line abreast — Deployment direction:R — space:6000yds — Together — 38400F 16000L — Relative
 

@@ -22,7 +22,7 @@ GE:
 		München — 1 — 5000F 12000R — Absolute
 		Frauenlob — 1 — 15000B 12000L — Absolute
 		Hamburg — 1 — 15000B 12000R — Absolute
-		München — 1 — 26000B — Absolute
+		Stuttgart — 1 — 26000B — Absolute
 
 	SG：Initial Course NW
 		1SG — 5 — line ahead — space:600yds — Follow — 0 — Relative
