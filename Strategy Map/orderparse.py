@@ -108,3 +108,22 @@ def parse_relative_position(text):
         else:  # "R"
             left -= val
     return (fwd, left)
+
+
+def local_to_map(fleet_center_xy, course, offset_fwd, offset_left):
+    """局部 (fwd,left) → 地图绝对 (x,y)(spec §6.3)。
+
+    forward_hat = DIRVEC[course]
+    left_hat    = (forward_hat.y, -forward_hat.x)       # +y 朝南下的左舷法向
+    offset_xy   = offset_fwd*forward_hat + offset_left*left_hat
+    return fleet_center_xy + offset_xy
+
+    course 既可是 initial_course(absolute 冻结)也可是当前 course(relative 每拍重算);
+    本函数不区分,调用方决定传哪个。
+    """
+    fx, fy = DIRVEC[course]
+    lx, ly = (fy, -fx)
+    cx, cy = fleet_center_xy
+    ox = offset_fwd * fx + offset_left * lx
+    oy = offset_fwd * fy + offset_left * ly
+    return (cx + ox, cy + oy)
