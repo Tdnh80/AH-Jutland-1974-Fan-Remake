@@ -552,6 +552,44 @@ class Game:
                 created.append(fleet_name)
         return created
 
+    def add_formation(self, fleet_name, fm_name, n_ships, offset_fwd=0.0, offset_left=0.0,
+                      kind=None, spacing=None, deploy="right", echelon_deg=45.0,
+                      turning=None, relative=REL_ABSOLUTE):
+        f = self._get(fleet_name)
+        if any(fm.name == fm_name for fm in f.formations):
+            raise ValueError(f"formation {fm_name!r} exists in {fleet_name!r}")
+        if n_ships < 1:
+            raise ValueError("need >= 1 ship")
+        if n_ships == 1:
+            kind = KIND_SINGLE
+            turning = "na"
+        else:
+            kind = kind or KIND_AHEAD
+            turning = turning or (TURN_FOLLOW if kind == KIND_AHEAD else TURN_TOGETHER)
+        spacing = DEFAULT_SPACING if spacing is None else spacing
+        ships = [Ship(name=f"{fleet_name}/{fm_name}-{i+1}", index=i) for i in range(n_ships)]
+        run_fm = Formation(
+            name=fm_name, ships=ships,
+            offset_fwd=offset_fwd, offset_left=offset_left,
+            relative=relative, kind=kind, spacing=spacing,
+            deploy=deploy, echelon_deg=echelon_deg, turning=turning,
+            frozen_offset_xy=None,
+        )
+        f.formations.append(run_fm)
+        return run_fm
+
+    def del_formation(self, fleet_name, fm_name):
+        f = self._get(fleet_name)
+        before = len(f.formations)
+        survivors = [fm for fm in f.formations if fm.name != fm_name]
+        if len(survivors) == before:
+            raise KeyError(f"no formation {fm_name!r} in {fleet_name!r}")
+        if not survivors:
+            raise ValueError("cannot delete the last formation of a fleet")
+        f.formations = survivors
+        # keep the primary-Formation ship mirror (Fleet.ships) consistent
+        f.ships = f.formations[0].ships
+
     def delete_fleet(self, name):
         if name not in self.fleets: raise KeyError(name)
         del self.fleets[name]
@@ -1228,6 +1266,10 @@ Commands
   clear <name>                                cancel a schedule, keep position
   randwalk <name> [speed]
   formation <name> <ahead|abreast|echelon> [right|left] [absolute|relative] [deg]
+  loadorder <GB|GE> <file> [q,r] [speed]      import an order-of-battle file
+  add formation <fleet> <fmname> ships <n> [offset ..F/B ..L/R] [kind ..] [spacing ..] [deploy ..] [echelon deg] [turning ..] [rel ..]
+  del formation <fleet> <fmname>
+  list formations <fleet>
   replay <turn>                               restore board to saved turn snapshot
   step                                        advance 60 min, detect contact
   list
@@ -1300,6 +1342,66 @@ def run_command(game, line):
     elif cmd == 'replay':
         g.replay_to(int(args[0])); print(f"  ok: replayed to turn {args[0]}")
         print(g.list_status())
+    elif cmd == 'loadorder':
+        # loadorder <GB|GE> <file> [q,r] [speed]
+        side = args[0].upper()
+        path = args[1]
+        start = args[2] if len(args) > 2 else "0,0"
+        spd = int(args[3]) if len(args) > 3 else 18
+        created = g.load_order_file(path, side, start, speed=spd)
+        print(f"  ok: loaded {len(created)} formation-fleets from {path!r}")
+    elif cmd == 'add' and args and args[0].lower() == 'formation':
+        # add formation <fleet> <fmname> ships <n> [offset <F/B..> <L/R..>] [kind ..]
+        #   [spacing <yds>] [deploy left|right] [echelon <deg>] [turning ..] [rel ..]
+        rest = args[1:]
+        fleet_name = rest[0]; fm_name = rest[1]
+        kw = rest[2:]
+        n_ships = None; off_fwd = 0.0; off_left = 0.0
+        kind = None; spacing = None; deploy = "right"; echdeg = 45.0
+        turning = None; relative = REL_ABSOLUTE
+        i = 0
+        while i < len(kw):
+            key = kw[i].lower()
+            if key == 'ships':
+                n_ships = int(kw[i+1]); i += 2
+            elif key == 'offset':
+                # 收集后续直到下一个已知关键字的 token 作为 relpos
+                j = i + 1; toks = []
+                known = {'ships', 'kind', 'spacing', 'deploy', 'echelon', 'turning', 'rel'}
+                while j < len(kw) and kw[j].lower() not in known:
+                    toks.append(kw[j]); j += 1
+                off_fwd, off_left = orderparse.parse_relative_position(" ".join(toks))
+                i = j
+            elif key == 'kind':
+                kind = kw[i+1].lower(); i += 2
+            elif key == 'spacing':
+                spacing = float(kw[i+1]); i += 2
+            elif key == 'deploy':
+                deploy = kw[i+1].lower(); i += 2
+            elif key == 'echelon':
+                echdeg = float(kw[i+1]); i += 2
+            elif key == 'turning':
+                turning = kw[i+1].lower(); i += 2
+            elif key == 'rel':
+                relative = kw[i+1].lower(); i += 2
+            else:
+                raise ValueError(f"unknown add-formation key {kw[i]!r}")
+        if n_ships is None:
+            raise ValueError("add formation requires 'ships <n>'")
+        g.add_formation(fleet_name, fm_name, n_ships, off_fwd, off_left,
+                        kind=kind, spacing=spacing, deploy=deploy,
+                        echelon_deg=echdeg, turning=turning, relative=relative)
+        print(f"  ok: added formation {fm_name!r} to {fleet_name!r}")
+    elif cmd == 'del' and args and args[0].lower() == 'formation':
+        g.del_formation(args[1], args[2])
+        print(f"  ok: deleted formation {args[2]!r} from {args[1]!r}")
+    elif cmd == 'list' and args and args[0].lower() == 'formations':
+        f = g._get(args[1])
+        for fm in f.formations:
+            note = f"  [note: {fm.note}]" if getattr(fm, 'note', '') else ""
+            print(f"  {fm.name:<16} ships={len(fm.ships)} kind={fm.kind} "
+                  f"offset=({fm.offset_fwd:.0f}F,{fm.offset_left:.0f}L) "
+                  f"turn={fm.turning} rel={fm.relative}{note}")
     elif cmd == 'list': print(g.list_status())
     elif cmd == 'vis':
         v = float(args[0])

@@ -390,5 +390,50 @@ class TestCrossPairsLayers(unittest.TestCase):
             self.assertEqual(fb.side, "GE")
 
 
+class TestOrderCLI(unittest.TestCase):
+    def test_loadorder_cli(self):
+        g = fs.Game()
+        out = fs.execute_command(g, f'loadorder GB "{GB_FILE}" 0,0')
+        self.assertEqual(len(g.fleets), 19)
+        self.assertIn("19", out)
+
+    def test_add_formation_cli(self):
+        g = fs.Game()
+        fs.execute_command(g, "new GB1 GB 0 0,0 E 18 4")
+        fs.execute_command(g, "add formation GB1 scouts ships 2 offset 8000F 10000L kind abreast spacing 4000 deploy right turning together rel absolute")
+        f = g.fleets["GB1"]
+        self.assertEqual(len(f.formations), 2)
+        added = [fm for fm in f.formations if fm.name == "scouts"][0]
+        self.assertEqual(len(added.ships), 2)
+        self.assertEqual(added.kind, "abreast")
+        self.assertEqual(added.spacing, 4000.0)
+        self.assertEqual((added.offset_fwd, added.offset_left), (8000.0, 10000.0))
+        self.assertEqual(added.turning, "together")
+        self.assertEqual(added.relative, "absolute")
+
+    def test_add_formation_single_auto(self):
+        g = fs.Game()
+        fs.execute_command(g, "new GB1 GB 0 0,0 E 18 4")
+        fs.execute_command(g, "add formation GB1 picket ships 1 offset 21000F")
+        added = [fm for fm in g.fleets["GB1"].formations if fm.name == "picket"][0]
+        self.assertEqual(added.kind, "single")
+        self.assertEqual(len(added.ships), 1)
+
+    def test_del_formation_cli(self):
+        g = fs.Game()
+        fs.execute_command(g, "new GB1 GB 0 0,0 E 18 4")
+        fs.execute_command(g, "add formation GB1 scouts ships 2")
+        self.assertEqual(len(g.fleets["GB1"].formations), 2)
+        fs.execute_command(g, "del formation GB1 scouts")
+        self.assertEqual(len(g.fleets["GB1"].formations), 1)
+
+    def test_list_formations_cli(self):
+        g = fs.Game()
+        fs.execute_command(g, "new GB1 GB 0 0,0 E 18 4")
+        fs.execute_command(g, "add formation GB1 scouts ships 2")
+        out = fs.execute_command(g, "list formations GB1")
+        self.assertIn("scouts", out)
+
+
 if __name__ == "__main__":
     unittest.main()
