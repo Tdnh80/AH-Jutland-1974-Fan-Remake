@@ -752,44 +752,90 @@ class Game:
     # --- save / load (JSON: fleet state + clock/substep/visibility; no RNG seed) ---
 
     @staticmethod
+    def _formation_to_dict(fo):
+        return {
+            'name': fo.name,
+            'ships': [{'name': s.name, 'index': s.index} for s in fo.ships],
+            'offset_fwd': fo.offset_fwd, 'offset_left': fo.offset_left,
+            'relative': fo.relative, 'kind': fo.kind, 'spacing': fo.spacing,
+            'deploy': fo.deploy, 'echelon_deg': fo.echelon_deg,
+            'turning': fo.turning,
+            'frozen_offset_xy': (list(fo.frozen_offset_xy)
+                                 if fo.frozen_offset_xy is not None else None),
+            'frozen_offset_xy_legacy': (list(fo.frozen_offset_xy_legacy)
+                                        if fo.frozen_offset_xy_legacy is not None else None),
+        }
+
+    @staticmethod
     def _fleet_to_dict(f):
         return {
             'name': f.name, 'side': f.side, 'activated_turn': f.activated_turn,
             'anchor_xy': list(f.anchor_xy), 'anchor_substep': f.anchor_substep,
             'course': f.course, 'speed': f.speed,
-            'ships': [s.name for s in f.ships],
+            'initial_course': f.initial_course,
+            'ships': [s.name for s in f.ships],   # kept for human readability / v5 tools
             'scheduled': f.scheduled, 'schedule_end_substep': f.schedule_end_substep,
             'waypoints': [list(w) for w in f.waypoints],
             'display_history': [list(h) for h in f.display_history],
-            'formation_kind': f.formation_kind, 'spacing': f.spacing,
-            'deploy': f.deploy, 'echelon_deg': f.echelon_deg,
-            'pos_mode': f.pos_mode,
-            'layout_heading': list(f.layout_heading) if f.layout_heading is not None else None,
+            'formations': [Game._formation_to_dict(fo) for fo in f.formations],
         }
 
     @staticmethod
-    def _fleet_from_dict(d):
+    def _formation_from_dict(fd):
+        fol = fd.get('frozen_offset_xy_legacy')
+        fo = Formation(
+            name=fd['name'],
+            ships=[Ship(s['name'], s.get('index', i)) for i, s in enumerate(fd['ships'])],
+            offset_fwd=fd.get('offset_fwd', 0.0), offset_left=fd.get('offset_left', 0.0),
+            relative=fd.get('relative', REL_RELATIVE), kind=fd.get('kind', KIND_AHEAD),
+            spacing=fd.get('spacing', DEFAULT_SPACING), deploy=fd.get('deploy', 'right'),
+            echelon_deg=fd.get('echelon_deg', 45.0), turning=fd.get('turning', TURN_FOLLOW),
+        )
+        foz = fd.get('frozen_offset_xy')
+        fo.frozen_offset_xy = tuple(foz) if foz is not None else None
+        fo.frozen_offset_xy_legacy = tuple(fol) if fol is not None else None
+        return fo
+
+    @staticmethod
+    def upgrade_v5_fleet(d):
+        """v5 (flat formation fields, no 'formations') -> single zero-offset Formation."""
+        kind = d.get('formation_kind', KIND_AHEAD)
+        pos_mode = d.get('pos_mode', REL_RELATIVE)
+        relative = REL_ABSOLUTE if pos_mode == REL_ABSOLUTE else REL_RELATIVE
+        turning = TURN_FOLLOW if kind == KIND_AHEAD else TURN_TOGETHER
         lh = d.get('layout_heading')
+        fo = Formation(
+            name=d['name'],
+            ships=[Ship(n, i) for i, n in enumerate(d['ships'])],
+            offset_fwd=0.0, offset_left=0.0, relative=relative, kind=kind,
+            spacing=d.get('spacing', DEFAULT_SPACING), deploy=d.get('deploy', 'right'),
+            echelon_deg=d.get('echelon_deg', 45.0), turning=turning,
+        )
+        fo.frozen_offset_xy = (0.0, 0.0) if relative == REL_ABSOLUTE else None
+        fo.frozen_offset_xy_legacy = tuple(lh) if lh is not None else None
+        return fo
+
+    @staticmethod
+    def _fleet_from_dict(d):
+        if 'formations' in d:
+            formations = [Game._formation_from_dict(fd) for fd in d['formations']]
+        else:
+            formations = [Game.upgrade_v5_fleet(d)]
         f = Fleet(
             name=d['name'], side=d['side'], activated_turn=d['activated_turn'],
             anchor_xy=tuple(d['anchor_xy']), anchor_substep=d['anchor_substep'],
             course=d['course'], speed=d['speed'],
-            ships=[Ship(n) for n in d['ships']],
+            initial_course=d.get('initial_course', d['course']),
             scheduled=d['scheduled'], schedule_end_substep=d['schedule_end_substep'],
             waypoints=[tuple(w) for w in d['waypoints']],
             display_history=[tuple(h) for h in d['display_history']],
+            formations=formations,
         )
-        f.formation_kind = d.get('formation_kind', formation.LINE_AHEAD)
-        f.spacing = d.get('spacing', DEFAULT_SPACING)
-        f.deploy = d.get('deploy', 'right')
-        f.echelon_deg = d.get('echelon_deg', 45.0)
-        f.pos_mode = d.get('pos_mode', formation.REL_MODE)
-        f.layout_heading = tuple(lh) if lh is not None else None
         return f
 
     def to_dict(self):
         return {
-            'version': 5,
+            'version': 6,
             'current_substep': self.current_substep,
             'visibility': self.visibility,
             'start_minute': self.start_minute,

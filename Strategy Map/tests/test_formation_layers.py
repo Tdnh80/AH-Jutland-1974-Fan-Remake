@@ -230,5 +230,103 @@ class TestTwoStagePipeline(unittest.TestCase):
         self.assertIsNotNone(prim.frozen_offset_xy)
 
 
+class TestSerializationV6(unittest.TestCase):
+    def test_to_dict_version_is_6_and_nested(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "1,2", "E", 18, 3)
+        d = g.to_dict()
+        self.assertEqual(d["version"], 6)
+        fd = d["fleets"][0]
+        self.assertIn("initial_course", fd)
+        self.assertIn("formations", fd)
+        self.assertEqual(len(fd["formations"]), 1)
+        fo = fd["formations"][0]
+        self.assertIn("offset_fwd", fo)
+        self.assertIn("turning", fo)
+        self.assertIn("relative", fo)
+        self.assertEqual([s["index"] for s in fo["ships"]], [0, 1, 2])
+
+    def test_v6_roundtrip_preserves_formation(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "1,2", "SE", 18, 3)
+        prim = g.fleets["F"].formations[0]
+        prim.kind = fm.LINE_ABREAST
+        prim.offset_fwd = 8000.0
+        prim.offset_left = 10000.0
+        prim.relative = fs.REL_ABSOLUTE
+        prim.turning = fs.TURN_TOGETHER
+        prim.deploy = "left"
+        prim.echelon_deg = 30.0
+        g2 = fs.Game()
+        g2.load_dict(g.to_dict())
+        p2 = g2.fleets["F"].formations[0]
+        self.assertEqual(p2.kind, fm.LINE_ABREAST)
+        self.assertEqual(p2.offset_fwd, 8000.0)
+        self.assertEqual(p2.offset_left, 10000.0)
+        self.assertEqual(p2.relative, fs.REL_ABSOLUTE)
+        self.assertEqual(p2.turning, fs.TURN_TOGETHER)
+        self.assertEqual(p2.deploy, "left")
+        self.assertEqual(p2.echelon_deg, 30.0)
+        self.assertEqual(g2.fleets["F"].initial_course, "SE")
+
+    def test_load_v5_save_upgrades_to_single_formation(self):
+        # craft a legacy v5 fleet dict (no 'formations' key, flat fields)
+        v5 = {
+            "version": 5,
+            "current_substep": 0,
+            "visibility": 20000.0,
+            "start_minute": 0,
+            "state": "SEARCH",
+            "contact_hexes": [],
+            "fleets": [{
+                "name": "F", "side": "GB", "activated_turn": 0,
+                "anchor_xy": [0.0, 0.0], "anchor_substep": 0,
+                "course": "E", "speed": 18,
+                "ships": ["F-1", "F-2", "F-3"],
+                "scheduled": False, "schedule_end_substep": 0.0,
+                "waypoints": [], "display_history": [[0, 0.0, 0.0]],
+                "formation_kind": "abreast", "spacing": 500.0,
+                "deploy": "left", "echelon_deg": 30.0,
+                "pos_mode": "absolute", "layout_heading": [1.0, 0.0],
+            }],
+        }
+        g = fs.Game()
+        g.load_dict(v5)
+        f = g.fleets["F"]
+        self.assertEqual(len(f.formations), 1)
+        prim = f.formations[0]
+        self.assertEqual(prim.offset_fwd, 0.0)
+        self.assertEqual(prim.offset_left, 0.0)
+        self.assertEqual(prim.kind, "abreast")
+        self.assertEqual(prim.relative, fs.REL_ABSOLUTE)   # pos_mode absolute
+        self.assertEqual(prim.turning, fs.TURN_TOGETHER)   # non-ahead -> together
+        self.assertEqual(prim.frozen_offset_xy, (0.0, 0.0))  # absolute -> frozen zero
+        self.assertEqual(f.initial_course, "E")            # old save: initial = course
+        self.assertEqual(len(f.ships), 3)
+        self.assertEqual([s.index for s in f.ships], [0, 1, 2])
+
+    def test_load_v5_line_ahead_upgrades_to_follow(self):
+        v5 = {
+            "version": 5, "current_substep": 0, "visibility": 20000.0,
+            "start_minute": 0, "state": "SEARCH", "contact_hexes": [],
+            "fleets": [{
+                "name": "F", "side": "GE", "activated_turn": 0,
+                "anchor_xy": [0.0, 0.0], "anchor_substep": 0,
+                "course": "E", "speed": 18, "ships": ["F-1", "F-2"],
+                "scheduled": False, "schedule_end_substep": 0.0,
+                "waypoints": [], "display_history": [[0, 0.0, 0.0]],
+                "formation_kind": "ahead", "spacing": 500.0,
+                "deploy": "right", "echelon_deg": 45.0,
+                "pos_mode": "relative", "layout_heading": None,
+            }],
+        }
+        g = fs.Game()
+        g.load_dict(v5)
+        prim = g.fleets["F"].formations[0]
+        self.assertEqual(prim.turning, fs.TURN_FOLLOW)     # ahead -> follow
+        self.assertEqual(prim.relative, fs.REL_RELATIVE)
+        self.assertIsNone(prim.frozen_offset_xy)           # relative -> not frozen
+
+
 if __name__ == '__main__':
     unittest.main()
