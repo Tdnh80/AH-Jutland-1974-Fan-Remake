@@ -1,0 +1,35 @@
+GB:
+	Fleet：
+		Division：Ships：Formation：(Formation info)：Turning Patten：Relative Position（Distance+Left Right Forward Backward）：Relative Patten
+		Turning Patten：编队内转向模式
+			Together：任何转向为同时转向
+			Follow：任何转向为跟随转向
+		Relative Patten：
+			Absolute：绝对坐标不变
+			Relative：航向上方位间距不变
+		Deployment direction（L R 指的向LorR延伸展开）以及Relative Position的方向全部基于Initial Course为正向0°的左90或者右90，并保持绝对不变（Together）或者相对不变（Follow）
+		简单来说就是坐标轴初始指向为Initial Course，可能需要一点坐标换算
+
+	BS：Initial Course SE（45°）
+		3rd Div. — 4 — line ahead — space:500yds — Together — 1125L — Absolute
+		2nd Div. — 4 — line ahead — space:500yds — Together — 3375L — Absolute
+		1st Div. — 4 — line ahead — space:500yds — Together — 5625L — Absolute
+		4th Div. — 4 — line ahead — space:500yds — Together — 1125R — Absolute
+		5th Div. — 4 — line ahead — space:500yds — Together — 3375R — Absolute
+		6th Div. — 4 — line ahead — space:500yds — Together — 5625L — Absolute
+		4LCS — 5 — line abreast — Deployment direction:R — space:4000yds — Together — 8000F 10000L — Absolute
+		Attached LC L  — 2 — line ahead — space:2000yds — Together — 1000F 8000L — Absolute
+		Attached LC R  — 2 — line ahead — space:2000yds — Together — 1000F 8000R — Absolute
+		2CS — 3 — line abreast — Deployment direction:R — space:12150yds — Together — 26350F 28350L — Absolute
+		2CS — 3 — line abreast — Deployment direction:L — space:12150yds — Together — 26350F 28350R — Absolute
+			下方此处考虑是否坐标变化至下一六角格？作为独立Fleet
+		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Absolute
+		Attached LC — 2 — line abreast — Deployment direction:R — space:6000yds — Together — 38400F 16000L — Relative
+
+	BCF：Initial Course SE（45°）
+		1BCS — 4 — line ahead — space:500yds — Follow — 0 — Absolute
+		2BCS — 2 — line ahead — space:500yds — Follow — 6000L  — Absolute
+		5BS — 2 — line ahead — space:500yds — Follow — 10000B  — Absolute
+		1LCS — 2 — line abreast — Deployment direction:R — space:10000yds — Together — 16000F 25000L — Absolute
+		3LCS — 2 — line abreast — Deployment direction:R — space:10000yds — Together — 16000F 5000L — Absolute
+		2LCS — 2 — line abreast — Deployment direction:L — space:10000yds — Together — 16000F 25000R — Absolute

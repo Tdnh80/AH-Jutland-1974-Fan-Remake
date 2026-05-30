@@ -1,0 +1,33 @@
+GE:
+	Fleet：
+		Division：Ships：Formation：(Formation info)：Turning Patten：Relative Position（Distance+Left Right Forward Backward）：Relative Patten
+		Turning Patten：编队内转向模式
+			Together：任何转向为同时转向
+			Follow：任何转向为跟随转向
+		Relative Patten：
+			Absolute：绝对坐标不变
+			Relative：航向上方位间距不变
+		Deployment direction（L R 指的向LorR延伸展开）以及Relative Position的方向全部基于Initial Course为正向0°的左90或者右90，并保持绝对不变（Together）或者相对不变（Follow）
+		简单来说就是坐标轴初始指向为Initial Course，可能需要一点坐标换算
+
+	BS：Initial Course SE（45°）
+		1st Div. — 5 — line ahead — space:550yds — Follow — 0 — Absolute
+		5th Div. — 4 — line ahead — space:550yds — Follow — 9000F — Absolute
+		6th Div. — 3 — line ahead — space:550yds — Follow — 4500F — Absolute
+		2nd Div. — 4 — line ahead — space:550yds — Follow — 7000B — Absolute
+		3rd Div. — 4 — line ahead — space:550yds — Follow — 13500B — Absolute
+		4th Div. — 4 — line ahead — space:550yds — Follow — 16500B — Absolute
+		Stettin — 1 — 21000F — Absolute
+		Rostock — 1 — 5000F 12000L — Absolute
+		München — 1 — 5000F 12000R — Absolute
+		Frauenlob — 1 — 15000B 12000L — Absolute
+		Hamburg — 1 — 15000B 12000R — Absolute
+		München — 1 — 26000B — Absolute
+
+	SG：Initial Course NW
+		1SG — 5 — line ahead — space:600yds — Follow — 0 — Relative
+		Frankfurt — 1 — 12000F — Relative
+		Wiesbaden — 1 — 10000F 8000R  — Relative
+		Regensburg — 1 — 4800F 14000R — Relative
+		Pillau — 1 — 10000F 8000L — Relative
+		Elbing — 1 — 4800F 14000L — Relative
