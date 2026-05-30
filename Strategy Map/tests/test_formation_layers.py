@@ -328,5 +328,34 @@ class TestSerializationV6(unittest.TestCase):
         self.assertIsNone(prim.frozen_offset_xy)           # relative -> not frozen
 
 
+class TestEncounterZeroRegression(unittest.TestCase):
+    def test_cross_pairs_still_detects_and_rolls_back(self):
+        g = fs.Game()
+        g.visibility = 20000.0
+        # GB heading E from (0,0); GE sitting still ~1 hex east so they close to <vis
+        g.add_fleet("GB1", "GB", 0, "0,0", "E", 18, 2)
+        g.add_fleet("GE1", "GE", 0, "1,0", "W", 18, 2)
+        # step several turns; they approach head-on and must trigger CONTACT
+        triggered = False
+        for _ in range(6):
+            g.step_turn()
+            if g.state == fs.STATE_CONTACT:
+                triggered = True
+                break
+        self.assertTrue(triggered, "expected an encounter between approaching fleets")
+        # rollback invariant: at the frozen substep all GBxGE ship pairs are >= vis
+        pairs = g._cross_pairs(g.current_substep)
+        self.assertTrue(pairs, "expected cross-side pairs")
+        self.assertTrue(all(d >= g.visibility - 1e-6 for d, _, _ in pairs),
+                        "frozen state must be the pre-contact >vis substep")
+
+    def test_cross_pairs_only_crosses_sides(self):
+        g = fs.Game()
+        g.add_fleet("GB1", "GB", 0, "0,0", "E", 18, 2)
+        g.add_fleet("GB2", "GB", 0, "0,1", "E", 18, 2)
+        # two same-side fleets -> no cross pairs at all
+        self.assertEqual(g._cross_pairs(0), [])
+
+
 if __name__ == '__main__':
     unittest.main()
