@@ -38,6 +38,7 @@ import formation
 import journal as journal_mod
 import coords
 import timekeep
+import orderparse
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +265,7 @@ class Formation:
     turning: str = TURN_FOLLOW       # follow = arc-rollback; together = rigid
     frozen_offset_xy: tuple = None   # lazily frozen map offset in absolute mode (None = not yet)
     frozen_offset_xy_legacy: tuple = None   # v5 layout_heading carrier (compat only)
+    note: str = ""                   # provenance note (e.g. inferred order-file decision)
 
     @property
     def is_single(self):
@@ -495,6 +497,55 @@ class Game:
                   ships=ships)
         f.display_history.append((activated * 6, *f.anchor_xy))
         self.fleets[name] = f
+
+    def load_order_file(self, path, side, start_hex="0,0", speed=18, activated=0):
+        """读编组文件 -> 每个 OrderFormation 实例化为一个运行期 Fleet。
+
+        返回创建的运行期 Fleet 名列表。Fleet 名 = '<OrderFleet>/<Formation>'。
+        absolute 模式懒冻结 frozen_offset_xy(本处 offset 已并入 anchor_xy,
+        运行期 Formation 自身 offset=0,故 frozen_offset_xy=(0,0));relative 留 None。
+        """
+        if side not in VALID_SIDES:
+            raise ValueError("side must be GB or GE")
+        if speed not in VALID_SPEEDS:
+            raise ValueError(f"speed in {VALID_SPEEDS}")
+        battle = orderparse.parse_battle_file(path, side)
+        h = parse_cell_or_hex(start_hex)
+        center = hex_center_xy(*h)
+        created = []
+        for ofleet in battle.fleets:
+            crs = ofleet.initial_course
+            if crs not in NEIGH:
+                raise ValueError(f"unsupported initial course {crs!r} in {ofleet.name}")
+            for ofm in ofleet.formations:
+                fleet_name = f"{ofleet.name}/{ofm.name}"
+                if fleet_name in self.fleets:
+                    raise ValueError(f"fleet {fleet_name!r} already exists")
+                anchor = orderparse.local_to_map(center, crs,
+                                                 ofm.offset_fwd, ofm.offset_left)
+                ships = [Ship(name=f"{fleet_name}-{i+1}", index=i)
+                         for i in range(ofm.n_ships)]
+                relative = ofm.relative
+                turning = ofm.turning if ofm.turning != "na" else TURN_FOLLOW
+                run_fm = Formation(
+                    name=ofm.name, ships=ships,
+                    offset_fwd=0.0, offset_left=0.0,
+                    relative=relative, kind=ofm.kind,
+                    spacing=ofm.spacing, deploy=ofm.deploy,
+                    echelon_deg=ofm.echelon_deg, turning=turning,
+                    frozen_offset_xy=((0.0, 0.0) if relative == REL_ABSOLUTE else None),
+                    note=ofm.note,
+                )
+                f = Fleet(
+                    name=fleet_name, side=side, activated_turn=activated,
+                    anchor_xy=anchor, anchor_substep=activated * 6,
+                    course=crs, speed=speed, initial_course=crs,
+                    formations=[run_fm],
+                )
+                f.display_history.append((activated * 6, *anchor))
+                self.fleets[fleet_name] = f
+                created.append(fleet_name)
+        return created
 
     def delete_fleet(self, name):
         if name not in self.fleets: raise KeyError(name)
@@ -764,6 +815,7 @@ class Game:
                                  if fo.frozen_offset_xy is not None else None),
             'frozen_offset_xy_legacy': (list(fo.frozen_offset_xy_legacy)
                                         if fo.frozen_offset_xy_legacy is not None else None),
+            'note': fo.note,
         }
 
     @staticmethod
@@ -790,6 +842,7 @@ class Game:
             relative=fd.get('relative', REL_RELATIVE), kind=fd.get('kind', KIND_AHEAD),
             spacing=fd.get('spacing', DEFAULT_SPACING), deploy=fd.get('deploy', 'right'),
             echelon_deg=fd.get('echelon_deg', 45.0), turning=fd.get('turning', TURN_FOLLOW),
+            note=fd.get('note', ''),
         )
         foz = fd.get('frozen_offset_xy')
         fo.frozen_offset_xy = tuple(foz) if foz is not None else None

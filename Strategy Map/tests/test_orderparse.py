@@ -268,5 +268,80 @@ class TestParseBattle(unittest.TestCase):
         self.assertEqual([s.index for s in fm.ships], [0, 1, 2, 3])
 
 
+import fleet_search as fs
+
+
+class TestLoadOrder(unittest.TestCase):
+    def test_fleet_count_equals_total_formations_gb(self):
+        # 端到端:每个 OrderFormation -> 一个运行期 Fleet
+        g = fs.Game()
+        names = g.load_order_file(GB_FILE, "GB", "0,0")
+        # GB: BS 13 + BCF 6 = 19
+        self.assertEqual(len(names), 19)
+        self.assertEqual(len(g.fleets), 19)
+
+    def test_fleet_count_equals_total_formations_ge(self):
+        g = fs.Game()
+        names = g.load_order_file(GE_FILE, "GE", "0,0")
+        # GE: BS 12 + SG 6 = 18
+        self.assertEqual(len(names), 18)
+        self.assertEqual(len(g.fleets), 18)
+
+    def test_loaded_fleet_side_and_course(self):
+        g = fs.Game()
+        g.load_order_file(GB_FILE, "GB", "0,0")
+        any_gb = next(iter(g.fleets.values()))
+        self.assertEqual(any_gb.side, "GB")
+        # initial_course propagated; default speed 18
+        self.assertEqual(any_gb.initial_course, "SE")
+        self.assertEqual(any_gb.course, "SE")
+        self.assertEqual(any_gb.speed, 18)
+
+    def test_anchor_matches_local_to_map(self):
+        # 某个非零偏移 Formation 的 anchor_xy 应等于 local_to_map(中心, initial_course, fwd, left)
+        g = fs.Game()
+        g.load_order_file(GB_FILE, "GB", "0,0")
+        center = fs.hex_center_xy(0, 0)
+        # 3BCS: offset (32400F, 13000L), initial_course SE
+        f = [f for f in g.fleets.values() if f.name.endswith("3BCS")][0]
+        want = op.local_to_map(center, "SE", 32400.0, 13000.0)
+        self.assertAlmostEqual(f.anchor_xy[0], want[0], places=3)
+        self.assertAlmostEqual(f.anchor_xy[1], want[1], places=3)
+
+    def test_zero_offset_formation_at_center(self):
+        # GE SG 1SG offset 0 -> anchor 在起始格心
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        center = fs.hex_center_xy(0, 0)
+        f = [f for f in g.fleets.values() if f.name.endswith("1SG")][0]
+        self.assertAlmostEqual(f.anchor_xy[0], center[0], places=3)
+        self.assertAlmostEqual(f.anchor_xy[1], center[1], places=3)
+
+    def test_each_loaded_fleet_single_formation_with_ships(self):
+        g = fs.Game()
+        g.load_order_file(GB_FILE, "GB", "0,0")
+        f = [f for f in g.fleets.values() if f.name.endswith("3rd Div.")][0]
+        self.assertEqual(len(f.formations), 1)
+        self.assertEqual(len(f.formations[0].ships), 4)
+
+    def test_save_load_roundtrip_preserves_anchor(self):
+        import tempfile, os as _os
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        f0 = [f for f in g.fleets.values() if f.name.endswith("Stettin")][0]
+        anchor0 = tuple(f0.anchor_xy)
+        fd, path = tempfile.mkstemp(suffix=".json")
+        _os.close(fd)
+        try:
+            g.save(path)
+            g2 = fs.Game()
+            g2.load(path)
+            f1 = [f for f in g2.fleets.values() if f.name.endswith("Stettin")][0]
+            self.assertAlmostEqual(f1.anchor_xy[0], anchor0[0], places=3)
+            self.assertAlmostEqual(f1.anchor_xy[1], anchor0[1], places=3)
+        finally:
+            _os.remove(path)
+
+
 if __name__ == "__main__":
     unittest.main()
