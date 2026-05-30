@@ -149,6 +149,12 @@ def next_cell_center_along(P, course):
     return (cx + s_next * dx, cy + s_next * dy)
 
 
+def _axial_dist(a, b):
+    """axial 两格的六角格距(cube 距离)。"""
+    dq, dr = a[0] - b[0], a[1] - b[1]
+    return (abs(dq) + abs(dr) + abs(dq + dr)) // 2
+
+
 def hex_neighbour(h, d):
     dq, dr = NEIGH[d]
     return (h[0] + dq, h[1] + dr)
@@ -722,6 +728,9 @@ class Game:
         return best
 
     def step_turn(self):
+        # prime turn 0 (initial board) so replay 0 restores the pristine start
+        if not self.journal.turns:
+            self.journal.record_turn(self.to_dict())
         if self.state == STATE_CONTACT:
             if not self.resume_search_if_clear():
                 # 仍保持接触:推进时间,记录相邻格进入者,不重复回退(否则死锁)
@@ -1377,56 +1386,48 @@ def plot_encounter_closeup(game, filename):
 # Demo
 # ---------------------------------------------------------------------------
 
-def run_demo(g, seed=None, max_turns=30, frame_prefix='demo'):
+def run_demo(g, seed=0, max_turns=30, frame_prefix='demo', plot=True):
+    """演示:两支舰队用 course 排队转向(每回合驶到格心转向)朝对方机动,
+    产生明显折线航迹并最终接敌。确定性(seed 固定可复现,默认 0;不依赖真随机
+    走向)。plot=False 时不画图(测试用,快、无需 matplotlib)。返回帧文件名列表。"""
     g.fleets.clear(); g.current_substep = 0; g.last_report = None
+    g.state = STATE_SEARCH; g.contact_hexes = set()
     g.rng = random.Random(seed); g.visibility = DEFAULT_VISIBILITY
     rng = g.rng
     g.add_fleet("GB1", "GB", 0, f"{rng.randint(-3,1)},{rng.randint(-2,2)}", "E", 18, 4)
     g.add_fleet("GE1", "GE", 0, f"{rng.randint(3,7)},{rng.randint(3,7)}", "W", 18, 3)
 
-    def attracted_schedule(name, target_name, turn):
-        """给 name 队设定朝 target_name 偏置的随机走路径;pull 随回合递增。"""
+    def steer(name, target_name):
+        """朝 target 大致方向下达 course(排队到下一格心转向);40% 偏到相邻方向
+        制造可见折线,但绝不直接反向,保证整体仍向对方逼近。"""
         f = g._get(name)
-        target_f = g._get(target_name)
-        speed = rng.choice([12, 18, 24])
-        pull = min(0.85, 0.1 + 0.06 * turn)
+        if f.scheduled:
+            return
+        tf = g._get(target_name)
         cur = xy_to_hex(*f.lead_xy(g.current_substep))
-        target_hex = xy_to_hex(*target_f.lead_xy(g.current_substep))
-        path = attracted_walk_path(cur, target_hex, speed, rng, prev_dir=f.course, pull=pull)
-        if len(path) == HEX_PER_CYCLE[speed]:
-            try:
-                g.schedule(name, speed, [display_cell(*h) for h in path])
-            except Exception:
-                pass
-        else:
-            try:
-                g.randwalk(name, speed)
-            except Exception:
-                pass
+        tgt = xy_to_hex(*tf.lead_xy(g.current_substep))
+        toward = min(DIRECTION_LIST,
+                     key=lambda d: _axial_dist(hex_neighbour(cur, d), tgt))
+        if rng.random() < 0.4:
+            toward = rng.choice([d for d in DIRECTION_LIST if d != OPPOSITE[toward]])
+        try:
+            g.course_change(name, toward, rng.choice([12, 18, 24]))
+        except Exception:
+            pass
 
-    # Initial schedules
-    try: attracted_schedule("GB1", "GE1", 0)
-    except Exception: pass
-    try: attracted_schedule("GE1", "GB1", 0)
-    except Exception: pass
-
-    files = [f"{frame_prefix}_t00.png"]; plot_state(g, files[0])
+    files = []
+    if plot:
+        fn = f"{frame_prefix}_t00.png"; plot_state(g, fn); files.append(fn)
+    steer("GB1", "GE1"); steer("GE1", "GB1")
     for t in range(1, max_turns + 1):
         encs = g.step_turn()
-        fn = f"{frame_prefix}_t{t:02d}.png"; plot_state(g, fn); files.append(fn)
+        if plot:
+            fn = f"{frame_prefix}_t{t:02d}.png"; plot_state(g, fn); files.append(fn)
         if encs:
             e = encs[0]
-            print(f"  demo: contact {g.clock(round(e['contact_sub']))} after {len(files)-1} frames")
+            print(f"  demo: contact {g.clock(round(e['contact_sub']))} at turn {t}")
             return files
-        for n in list(g.fleets):
-            if not g.fleets[n].scheduled:
-                other = "GE1" if n == "GB1" else "GB1"
-                if other in g.fleets:
-                    try: attracted_schedule(n, other, t)
-                    except Exception: pass
-                else:
-                    try: g.randwalk(n, rng.choice([12, 18, 24]))
-                    except Exception: pass
+        steer("GB1", "GE1"); steer("GE1", "GB1")
     print(f"  demo: no contact in {max_turns} turns")
     return files
 
@@ -1605,7 +1606,7 @@ def run_command(game, line):
             fn = args[0] if args else 'board.png'
             plot_state(g, fn); print(f"  ok: saved {fn}")
     elif cmd == 'demo':
-        seed = int(args[0]) if args else None
+        seed = int(args[0]) if args else 0
         mt = int(args[1]) if len(args) > 1 else 30
         run_demo(g, seed=seed, max_turns=mt)
     elif cmd == 'step':

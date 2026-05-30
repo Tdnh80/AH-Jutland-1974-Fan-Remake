@@ -16,9 +16,11 @@ class TestJournalIntegration(unittest.TestCase):
         g = two_fleets()
         g.step_turn()
         g.step_turn()
-        self.assertEqual(len(g.journal.turns), 2)
-        self.assertEqual(g.journal.turns[0]["current_substep"], 6)
-        self.assertEqual(g.journal.turns[1]["current_substep"], 12)
+        # turn 0 (initial) is primed, then turn 1 (sub6) and turn 2 (sub12)
+        self.assertEqual(len(g.journal.turns), 3)
+        self.assertEqual(g.journal.snapshot_at_turn(0)["current_substep"], 0)
+        self.assertEqual(g.journal.snapshot_at_turn(1)["current_substep"], 6)
+        self.assertEqual(g.journal.snapshot_at_turn(2)["current_substep"], 12)
 
     def test_save_load_roundtrip_with_journal(self):
         g = two_fleets()
@@ -34,11 +36,13 @@ class TestJournalIntegration(unittest.TestCase):
 
     def test_replay_to_earlier_turn(self):
         g = two_fleets()
-        g.step_turn()      # snapshot turn 0 -> sub6
-        g.step_turn()      # snapshot turn 1 -> sub12
+        g.step_turn()      # turn 1 -> sub6
+        g.step_turn()      # turn 2 -> sub12
         self.assertEqual(g.current_substep, 12)
-        g.replay_to(0)
+        g.replay_to(1)
         self.assertEqual(g.current_substep, 6)
+        g.replay_to(0)     # initial board
+        self.assertEqual(g.current_substep, 0)
 
 
 if __name__ == '__main__':
