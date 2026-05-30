@@ -238,6 +238,7 @@ def hhmm(total_minutes):
 @dataclass
 class Ship:
     name: str
+    index: int = 0
 
 
 @dataclass
