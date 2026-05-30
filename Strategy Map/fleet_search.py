@@ -1109,6 +1109,82 @@ def plot_state(game, filename):
     plt.tight_layout(); plt.savefig(filename, dpi=110, bbox_inches='tight'); plt.close(fig)
 
 
+def plot_order(game, filename):
+    """编组校验图:画每个 Fleet(=一个 Formation)的中心、内部 Ship、
+    Initial Course 箭头;带 note 的醒目描边 + 旁注。GB 红 / GE 蓝(锁定)。"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Polygon, Circle
+    except ImportError:
+        raise RuntimeError("matplotlib not installed; pip install matplotlib")
+
+    fleets = list(game.fleets.values())
+    if not fleets:
+        raise RuntimeError("no fleets to plot; loadorder first")
+
+    pts = []
+    for f in fleets:
+        pts.append(f.lead_xy(f.anchor_substep))
+        for _, p in f.ship_positions(f.anchor_substep):
+            pts.append(p)
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    m = HEX_SIDE * 1.5
+    x_min, x_max = min(xs) - m, max(xs) + m
+    y_min, y_max = min(ys) - m, max(ys) + m
+
+    r_lo = int(math.floor(y_min / (HEX_SIDE * _S3))) - 1
+    r_hi = int(math.ceil(y_max / (HEX_SIDE * _S3))) + 1
+    fig, ax = plt.subplots(figsize=(13, 12))
+    for r in range(r_lo, r_hi + 1):
+        q_lo = int(math.floor(x_min / HEX_SIDE - r / 2.0)) - 1
+        q_hi = int(math.ceil(x_max / HEX_SIDE - r / 2.0)) + 1
+        for q in range(q_lo, q_hi + 1):
+            cx, cy = hex_center_xy(q, r)
+            if not (x_min <= cx <= x_max and y_min <= cy <= y_max):
+                continue
+            ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True, fill=False,
+                                 edgecolor='#d3d3d3', linewidth=0.5))
+
+    colors = {'GB': '#a32020', 'GE': '#1f4e8a'}
+    arrow_len = HEX_SIDE * 0.6
+    for f in fleets:
+        col = colors[f.side]
+        center = f.lead_xy(f.anchor_substep)
+        # 内部 Ship 点 + 连线
+        ship_pts = [p for _, p in f.ship_positions(f.anchor_substep)]
+        if len(ship_pts) >= 2:
+            ax.plot([p[0] for p in ship_pts], [p[1] for p in ship_pts],
+                    '-', color=col, alpha=0.4, linewidth=1.0)
+        for sx, sy in ship_pts:
+            ax.plot(sx, sy, 'o', color=col, markersize=4,
+                    markeredgecolor='black', markeredgewidth=0.3)
+        # Formation 中心大标记 + 标签
+        ax.plot(center[0], center[1], 's', color=col, markersize=8,
+                markeredgecolor='black', markeredgewidth=0.5, zorder=4)
+        note = getattr(f.formations[0], 'note', '') if f.formations else ''
+        label = f"{f.name}\n{micro_str(*center)}"
+        if note:
+            label += f"\n⚠ {note}"
+            ax.add_patch(Circle(center, HEX_SIDE * 0.25, fill=False,
+                                edgecolor='orange', linewidth=2.0, zorder=3))
+        ax.annotate(label, center, textcoords='offset points', xytext=(6, 6),
+                    fontsize=6, color=col,
+                    weight=('bold' if note else 'normal'))
+        # Initial Course 箭头
+        ux, uy = DIRVEC[f.initial_course]
+        ax.annotate("", xy=(center[0] + arrow_len * ux, center[1] + arrow_len * uy),
+                    xytext=center,
+                    arrowprops=dict(arrowstyle="->", color=col, alpha=0.6, lw=1.0))
+
+    ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
+    ax.set_aspect('equal'); ax.invert_yaxis()
+    ax.set_title("Order of Battle — GB=red GE=blue  (⚠ = inferred decision, verify)")
+    ax.set_xticks([]); ax.set_yticks([])
+    plt.tight_layout(); plt.savefig(filename, dpi=110, bbox_inches='tight'); plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Close-up encounter plot
 # ---------------------------------------------------------------------------
@@ -1417,7 +1493,12 @@ def run_command(game, line):
         g.load(args[0]); print(f"  ok: loaded {args[0]!r}")
         print(g.list_status())
     elif cmd == 'plot':
-        fn = args[0] if args else 'board.png'; plot_state(g, fn); print(f"  ok: saved {fn}")
+        if args and args[0].lower() == 'order':
+            fn = args[1] if len(args) > 1 else 'order.png'
+            plot_order(g, fn); print(f"  ok: saved {fn}")
+        else:
+            fn = args[0] if args else 'board.png'
+            plot_state(g, fn); print(f"  ok: saved {fn}")
     elif cmd == 'demo':
         seed = int(args[0]) if args else None
         mt = int(args[1]) if len(args) > 1 else 30

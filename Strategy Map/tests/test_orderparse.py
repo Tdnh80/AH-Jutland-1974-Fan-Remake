@@ -435,5 +435,37 @@ class TestOrderCLI(unittest.TestCase):
         self.assertIn("scouts", out)
 
 
+class TestPlotOrder(unittest.TestCase):
+    def setUp(self):
+        try:
+            import matplotlib  # noqa: F401
+        except ImportError:
+            self.skipTest("matplotlib not installed")
+
+    def test_plot_order_gb_smoke(self):
+        import tempfile, os as _os
+        g = fs.Game()
+        g.load_order_file(GB_FILE, "GB", "0,0")
+        fd, path = tempfile.mkstemp(suffix=".png")
+        _os.close(fd)
+        try:
+            fs.plot_order(g, path)
+            self.assertGreater(_os.path.getsize(path), 0)
+        finally:
+            _os.remove(path)
+
+    def test_plot_order_ge_smoke(self):
+        import tempfile, os as _os
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        fd, path = tempfile.mkstemp(suffix=".png")
+        _os.close(fd)
+        try:
+            fs.plot_order(g, path)
+            self.assertGreater(_os.path.getsize(path), 0)
+        finally:
+            _os.remove(path)
+
+
 if __name__ == "__main__":
     unittest.main()
