@@ -49,6 +49,15 @@ HEX_SIZE = HEX_SIDE / math.sqrt(3)  # centre-to-vertex
 APOTHEM = HEX_SIDE / 2.0            # centre-to-edge-midpoint
 STEP_YARDS_PER_KNOT = 36000.0 / 108  # = 333.33 -> 18kn covers exactly 1 hex / 6 substeps
 DEFAULT_SPACING = 500.0
+# v6 three-layer formation knobs
+TURN_FOLLOW = "follow"
+TURN_TOGETHER = "together"
+REL_ABSOLUTE = "absolute"
+REL_RELATIVE = "relative"
+KIND_AHEAD = formation.LINE_AHEAD       # "ahead"
+KIND_ABREAST = formation.LINE_ABREAST   # "abreast"
+KIND_ECHELON = formation.ECHELON        # "echelon"
+KIND_SINGLE = "single"
 DEFAULT_VISIBILITY = 20000.0        # base figure from requirement.docx
 MAX_VISIBILITY = HEX_SIDE           # 36000; "能见度最高 36k yards"
 
@@ -239,6 +248,26 @@ def hhmm(total_minutes):
 class Ship:
     name: str
     index: int = 0
+
+
+@dataclass
+class Formation:
+    name: str
+    ships: list = field(default_factory=list)
+    offset_fwd: float = 0.0          # +forward / -back, yards (along initial/current course)
+    offset_left: float = 0.0         # +port / -starboard, yards
+    relative: str = REL_RELATIVE     # absolute = freeze offset on initial_course; relative = follow course
+    kind: str = KIND_AHEAD
+    spacing: float = DEFAULT_SPACING
+    deploy: str = "right"
+    echelon_deg: float = 45.0
+    turning: str = TURN_FOLLOW       # follow = arc-rollback; together = rigid
+    frozen_offset_xy: tuple = None   # lazily frozen map offset in absolute mode (None = not yet)
+    frozen_offset_xy_legacy: tuple = None   # v5 layout_heading carrier (compat only)
+
+    @property
+    def is_single(self):
+        return len(self.ships) == 1 or self.kind == KIND_SINGLE
 
 
 @dataclass
