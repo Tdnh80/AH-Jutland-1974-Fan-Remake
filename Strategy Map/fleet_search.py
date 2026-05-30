@@ -787,6 +787,9 @@ class Game:
         f.pending_course = None
         f.pending_speed = None
         f.pending_turn_xy = None
+        # 把精确的格心转向点插进 display_history,使绘制的航迹在格心拐弯;否则
+        # 每 10min 一拍的采样会用一条弦跨过该拍、切掉拐角(不经过六边形中心)。
+        f.display_history.append((t_hit, f.anchor_xy[0], f.anchor_xy[1]))
 
     def _check_pending_turns(self, sub):
         """单拍推进中检测:旗舰本拍越过 pending_turn_xy 则在精确分数拍 t_hit 转向。

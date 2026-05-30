@@ -135,11 +135,6 @@ _DASH = "—"
 _FLEET_RE = re.compile(r"^([A-Za-z0-9]+)\s*[:：]\s*Initial\s+Course\s+([A-Za-z]+)",
                        re.IGNORECASE)
 
-# 既定决策注记(spec §6.4)
-_NOTE_6TH = "推断修正:原文5625L,按左右对称应为5625R"
-_NOTE_MUNCHEN = "同名舰两次,按字面各导,请核对笔误"
-_NOTE_2CS = "原注'是否坐标变化至下一格/作为独立Fleet';本导入按同Fleet两Formation,未移格"
-
 
 def _norm_course(token):
     """'SE（45°）' / 'NW' -> 'SE'/'NW'(取前缀字母方向键)。"""
@@ -227,9 +222,8 @@ def _make_ships(formation):
 def parse_battle(text, side):
     """整文件文本 -> Battle(side 的若干 OrderFleet,各挂 OrderFormation)。
 
-    既定决策(spec §6.4)在此层落地:6th Div. 改判 5625R + note;
-    两个同名 München -> #1/#2 + note;2CS 两行 -> 2CS#1/#2 + note;
-    其余同名行也按出现顺序加 #k 后缀消歧。
+    编组文件是权威数据,忠实解析(不再做推断修正)。唯一加工是同名 Formation 消歧:
+    文件中确有重名行(如 GB BS 的两组 2CS,deploy R/L),按出现顺序加 #k 后缀。
     """
     fleets = []
     cur = None
@@ -259,14 +253,8 @@ def parse_battle(text, side):
 
 
 def _apply_decisions_and_dedup(fleet):
-    """落地 §6.4 既定决策 + 同名 Formation 加 #k 后缀。"""
-    # 1) 6th Div. 修正(仅 GB BS):若 offset_left>0(误判 L)则翻成 R 并加 note
-    for fm in fleet.formations:
-        if fm.name == "6th Div." and fm.offset_left > 0:
-            fm.offset_left = -fm.offset_left
-            fm.note = _NOTE_6TH
-
-    # 2) 同名去重:统计名字出现次数,>1 的按出现顺序加 #1/#2...
+    """同名 Formation 按出现顺序加 #k 后缀消歧(文件中确有重名,如 GB BS 两组 2CS)。
+    编组文件已是权威数据,不再做任何推断修正。"""
     from collections import Counter
     counts = Counter(fm.name for fm in fleet.formations)
     seen = {}
@@ -275,12 +263,7 @@ def _apply_decisions_and_dedup(fleet):
             base = fm.name
             seen[base] = seen.get(base, 0) + 1
             fm.name = f"{base}#{seen[base]}"
-            if base == "München":
-                fm.note = _NOTE_MUNCHEN
-            elif base == "2CS":
-                fm.note = _NOTE_2CS
-            else:
-                fm.note = fm.note or f"同名{base}第{seen[base]}个,请核对"
+            fm.note = f"同名 {base} 第 {seen[base]} 组(文件中重名,已消歧)"
 
 
 def parse_battle_file(path, side):

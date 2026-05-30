@@ -69,9 +69,9 @@ class TestParseRelativePosition(unittest.TestCase):
         self.assertEqual(op.parse_relative_position("  26350F　28350L "),
                          (26350.0, 28350.0))
 
-    # 实测既定决策值(spec §6.4)
-    def test_6th_div_corrected_to_R(self):
-        # 6th Div. 推断修正为 5625R
+    # 实测值
+    def test_6th_div_5625R(self):
+        # GB BS 6th Div. = 5625R(文件已为 R)-> (0, -5625)
         self.assertEqual(op.parse_relative_position("5625R"), (0.0, -5625.0))
 
     def test_2cs_row1_R_deploy_28350L(self):
@@ -210,23 +210,24 @@ class TestParseBattle(unittest.TestCase):
         self.assertEqual(len(fms), 1)
         self.assertEqual(fms[0].relative, "relative")
 
-    # --- 既定决策 (spec §6.4) ---
-    def test_gb_6th_div_corrected_to_R_with_note(self):
+    # --- 文件直读(已是权威数据,无推断修正)---
+    def test_gb_6th_div_is_R_no_note(self):
         fm = [f for f in self.gb.fleets[0].formations if f.name == "6th Div."][0]
         self.assertEqual((fm.offset_fwd, fm.offset_left), (0.0, -5625.0))  # 5625R
-        self.assertIn("5625", fm.note)
-        self.assertNotEqual(fm.note, "")
+        self.assertEqual(fm.note, "")        # 文件已为 R,不再有推断修正注记
 
-    def test_ge_two_munchen_distinct(self):
+    def test_ge_munchen_and_stuttgart_distinct_singles(self):
+        # 原重复的第二个 München 已在文件里更正为 Stuttgart
         names = [f.name for f in self.ge.fleets[0].formations]
-        self.assertIn("München#1", names)
-        self.assertIn("München#2", names)
-        m1 = [f for f in self.ge.fleets[0].formations if f.name == "München#1"][0]
-        m2 = [f for f in self.ge.fleets[0].formations if f.name == "München#2"][0]
-        self.assertEqual((m1.offset_fwd, m1.offset_left), (5000.0, -12000.0))  # 5000F 12000R
-        self.assertEqual((m2.offset_fwd, m2.offset_left), (-26000.0, 0.0))     # 26000B
-        self.assertNotEqual(m1.note, "")
-        self.assertNotEqual(m2.note, "")
+        self.assertIn("München", names)
+        self.assertIn("Stuttgart", names)
+        self.assertNotIn("München#1", names)
+        muc = [f for f in self.ge.fleets[0].formations if f.name == "München"][0]
+        stu = [f for f in self.ge.fleets[0].formations if f.name == "Stuttgart"][0]
+        self.assertEqual((muc.offset_fwd, muc.offset_left), (5000.0, -12000.0))  # 5000F 12000R
+        self.assertEqual((stu.offset_fwd, stu.offset_left), (-26000.0, 0.0))     # 26000B
+        self.assertEqual(muc.note, "")
+        self.assertEqual(stu.note, "")
 
     def test_gb_2cs_two_formations(self):
         fms = [f for f in self.gb.fleets[0].formations if f.name.startswith("2CS")]
