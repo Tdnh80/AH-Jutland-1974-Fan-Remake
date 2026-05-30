@@ -391,24 +391,65 @@ class Fleet:
     def lead_xy(self, substep):
         return self._xy_at_arc(self._arc_at(substep))
 
-    def ship_positions(self, substep):
-        if self.formation_kind == formation.LINE_AHEAD:
-            # 单纵:保留 v4 沿航迹鱼贯(turn in succession)
-            lead_a = self._arc_at(substep)
-            return [(s.name, self._xy_at_arc(lead_a - i * self.spacing))
-                    for i, s in enumerate(self.ships)]
-        # 其它队形:中心(沿航迹参考点)+ 队形几何
-        center = self.lead_xy(substep)
-        heading = DIRVEC[self.course]
-        offs = formation.ship_offsets(self.formation_kind, len(self.ships),
-                                      self.spacing, self.deploy, self.echelon_deg)
-        if self.pos_mode == formation.REL_MODE:
-            map_offs = formation.to_map_offsets(heading, offs)
+    def _offset_to_map(self, fo, course_key):
+        """offset_fwd along course + offset_left to port -> map (dx, dy)."""
+        fx, fy = DIRVEC[course_key]
+        # port normal for +y-south frame: left_hat = (fy, -fx)
+        lx, ly = fy, -fx
+        return (fo.offset_fwd * fx + fo.offset_left * lx,
+                fo.offset_fwd * fy + fo.offset_left * ly)
+
+    def _formation_center_xy(self, fo, substep):
+        """Stage 2: fleet center + rotated offset (relative knob)."""
+        cx, cy = self.lead_xy(substep)
+        if fo.offset_fwd == 0.0 and fo.offset_left == 0.0:
+            return (cx, cy)
+        if fo.relative == REL_ABSOLUTE:
+            if fo.frozen_offset_xy is None:
+                fo.frozen_offset_xy = self._offset_to_map(fo, self.initial_course)
+            ox, oy = fo.frozen_offset_xy
         else:
-            lh = self.layout_heading if self.layout_heading is not None else heading
-            map_offs = formation.to_map_offsets(lh, offs)
+            ox, oy = self._offset_to_map(fo, self.course)
+        return (cx + ox, cy + oy)
+
+    @staticmethod
+    def _kind_for_offsets(fo):
+        # KIND_SINGLE has no formation.ship_offsets entry; treat as a 1-row line-ahead
+        return KIND_AHEAD if fo.kind == KIND_SINGLE else fo.kind
+
+    def _formation_ship_positions(self, fo, substep):
+        """Stage 3: internal ship positions for one Formation (turning knob)."""
+        n = len(fo.ships)
+        if fo.turning == TURN_FOLLOW and fo.kind == KIND_AHEAD:
+            # follow / in-succession: arc-rollback along the fleet polyline (+ frozen translate)
+            lead_a = self._arc_at(substep)
+            if fo.offset_fwd == 0.0 and fo.offset_left == 0.0:
+                base = (0.0, 0.0)
+            elif fo.relative == REL_ABSOLUTE:
+                if fo.frozen_offset_xy is None:
+                    fo.frozen_offset_xy = self._offset_to_map(fo, self.initial_course)
+                base = fo.frozen_offset_xy
+            else:
+                base = self._offset_to_map(fo, self.course)
+            out = []
+            for s in fo.ships:
+                x, y = self._xy_at_arc(lead_a - s.index * fo.spacing)
+                out.append((s.name, (x + base[0], y + base[1])))
+            return out
+        # together (or non-ahead follow falls back to rigid): rigid spread about formation center
+        center = self._formation_center_xy(fo, substep)
+        hat = DIRVEC[self.initial_course] if fo.relative == REL_ABSOLUTE else DIRVEC[self.course]
+        offs = formation.ship_offsets(self._kind_for_offsets(fo), n,
+                                      fo.spacing, fo.deploy, fo.echelon_deg)
+        map_offs = formation.to_map_offsets(hat, offs)
         pts = formation.place_map(center, map_offs)
-        return [(s.name, p) for s, p in zip(self.ships, pts)]
+        return [(s.name, p) for s, p in zip(fo.ships, pts)]
+
+    def ship_positions(self, substep):
+        out = []
+        for fo in self.formations:
+            out.extend(self._formation_ship_positions(fo, substep))
+        return out
 
 
 # ---------------------------------------------------------------------------
