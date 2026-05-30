@@ -49,5 +49,65 @@ class TestFormationClass(unittest.TestCase):
         self.assertTrue(fo.is_single)
 
 
+class TestFleetHoldsFormation(unittest.TestCase):
+    def test_add_fleet_creates_single_zero_offset_formation(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 3)
+        f = g.fleets["F"]
+        self.assertEqual(len(f.formations), 1)
+        prim = f.formations[0]
+        self.assertEqual(prim.offset_fwd, 0.0)
+        self.assertEqual(prim.offset_left, 0.0)
+        self.assertEqual(len(prim.ships), 3)
+        self.assertEqual([s.index for s in prim.ships], [0, 1, 2])
+        self.assertEqual([s.name for s in prim.ships], ["F-1", "F-2", "F-3"])
+
+    def test_initial_course_set_from_course(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "NE", 18, 2)
+        self.assertEqual(g.fleets["F"].initial_course, "NE")
+        self.assertEqual(g.fleets["F"].course, "NE")
+
+    def test_legacy_ships_property_reads_primary(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 2)
+        f = g.fleets["F"]
+        self.assertEqual(len(f.ships), 2)
+        self.assertEqual([s.name for s in f.ships], ["F-1", "F-2"])
+
+    def test_legacy_formation_kind_delegates(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 2)
+        f = g.fleets["F"]
+        self.assertEqual(f.formation_kind, fm.LINE_AHEAD)
+        f.formation_kind = fm.LINE_ABREAST
+        self.assertEqual(f.formations[0].kind, fm.LINE_ABREAST)
+        self.assertEqual(f.formation_kind, fm.LINE_ABREAST)
+
+    def test_legacy_pos_mode_maps_to_relative_knob(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 2)
+        f = g.fleets["F"]
+        # default is line-ahead/relative -> pos_mode relative
+        self.assertEqual(f.pos_mode, fm.REL_MODE)
+        f.pos_mode = fm.ABS_MODE
+        self.assertEqual(f.formations[0].relative, fs.REL_ABSOLUTE)
+        self.assertEqual(f.pos_mode, fm.ABS_MODE)
+
+    def test_legacy_spacing_deploy_echelon_layout_heading_delegate(self):
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 2)
+        f = g.fleets["F"]
+        f.spacing = 700.0
+        f.deploy = "left"
+        f.echelon_deg = 30.0
+        f.layout_heading = (1.0, 0.0)
+        prim = f.formations[0]
+        self.assertEqual(prim.spacing, 700.0)
+        self.assertEqual(prim.deploy, "left")
+        self.assertEqual(prim.echelon_deg, 30.0)
+        self.assertEqual(f.layout_heading, (1.0, 0.0))
+
+
 if __name__ == '__main__':
     unittest.main()

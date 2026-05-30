@@ -276,20 +276,82 @@ class Fleet:
     side: str
     activated_turn: int
     anchor_xy: tuple          # exact (x, y); NOT snapped to a centre
-    anchor_substep: int
+    anchor_substep: float     # may be float (locked invariant)
     course: str
     speed: int
-    ships: list = field(default_factory=list)
+    ships: list = field(default_factory=list)   # transitional; mirrored into primary Formation
     scheduled: bool = False
     schedule_end_substep: float = 0.0
     waypoints: list = field(default_factory=list)   # axial hexes excl. start
     display_history: list = field(default_factory=list)  # [(substep, x, y)]
-    formation_kind: str = formation.LINE_AHEAD
-    spacing: float = DEFAULT_SPACING
-    deploy: str = "right"
-    echelon_deg: float = 45.0
-    pos_mode: str = formation.REL_MODE
-    layout_heading: tuple = None     # 绝对模式布局时航向;None=用当前航向
+    initial_course: str = None       # course anchored at layout time (0deg axis for L/R/F/B)
+    formations: list = field(default_factory=list)   # >=1 Formation (lower layer)
+
+    def __post_init__(self):
+        if self.initial_course is None:
+            self.initial_course = self.course
+        if not self.formations:
+            # wrap any constructor-supplied ships into a default zero-offset single Formation
+            ships = self.ships if self.ships else []
+            for i, s in enumerate(ships):
+                s.index = i
+            self.formations = [Formation(name=self.name, ships=list(ships))]
+        # keep self.ships pointing at the primary Formation's ship list (single source)
+        self.ships = self.formations[0].ships
+
+    @property
+    def primary(self):
+        return self.formations[0]
+
+    # --- backward-compat legacy formation fields (delegate to primary Formation) ---
+    @property
+    def formation_kind(self):
+        return self.primary.kind
+
+    @formation_kind.setter
+    def formation_kind(self, v):
+        self.primary.kind = v
+
+    @property
+    def spacing(self):
+        return self.primary.spacing
+
+    @spacing.setter
+    def spacing(self, v):
+        self.primary.spacing = v
+
+    @property
+    def deploy(self):
+        return self.primary.deploy
+
+    @deploy.setter
+    def deploy(self, v):
+        self.primary.deploy = v
+
+    @property
+    def echelon_deg(self):
+        return self.primary.echelon_deg
+
+    @echelon_deg.setter
+    def echelon_deg(self, v):
+        self.primary.echelon_deg = v
+
+    @property
+    def pos_mode(self):
+        # legacy formation.ABS_MODE/REL_MODE == REL_ABSOLUTE/REL_RELATIVE (same string values)
+        return self.primary.relative
+
+    @pos_mode.setter
+    def pos_mode(self, v):
+        self.primary.relative = v
+
+    @property
+    def layout_heading(self):
+        return self.primary.frozen_offset_xy_legacy
+
+    @layout_heading.setter
+    def layout_heading(self, v):
+        self.primary.frozen_offset_xy_legacy = (tuple(v) if v is not None else None)
 
     def is_active(self, substep):
         return substep >= self.activated_turn * 6
@@ -385,10 +447,11 @@ class Game:
         if speed not in VALID_SPEEDS: raise ValueError(f"speed in {VALID_SPEEDS}")
         if n < 1: raise ValueError("need >= 1 ship")
         h = parse_cell_or_hex(hex_str)
+        ships = [Ship(f"{name}-{i+1}", i) for i in range(n)]
         f = Fleet(name=name, side=side, activated_turn=activated,
                   anchor_xy=hex_center_xy(*h), anchor_substep=activated * 6,
-                  course=course, speed=speed,
-                  ships=[Ship(f"{name}-{i+1}") for i in range(n)])
+                  course=course, speed=speed, initial_course=course,
+                  ships=ships)
         f.display_history.append((activated * 6, *f.anchor_xy))
         self.fleets[name] = f
 
