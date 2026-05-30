@@ -396,7 +396,9 @@ class Fleet:
     def _offset_to_map(self, fo, course_key):
         """offset_fwd along course + offset_left to port -> map (dx, dy)."""
         fx, fy = DIRVEC[course_key]
-        # port normal for +y-south frame: left_hat = (fy, -fx)
+        # port normal for +y-south frame: left_hat = (fy, -fx).  Note this is the
+        # NEGATIVE of formation.py's starboard normal (-uy, ux); the two modules
+        # use opposite sign conventions (here: +left = port; formation: +right).
         lx, ly = fy, -fx
         return (fo.offset_fwd * fx + fo.offset_left * lx,
                 fo.offset_fwd * fy + fo.offset_left * ly)
@@ -518,7 +520,10 @@ class Game:
             if crs not in NEIGH:
                 raise ValueError(f"unsupported initial course {crs!r} in {ofleet.name}")
             for ofm in ofleet.formations:
-                fleet_name = f"{ofleet.name}/{ofm.name}"
+                # side prefix keeps names globally unique when both GB & GE are
+                # loaded into one Game (both sides have a Fleet named "BS" with
+                # overlapping Division names, e.g. "1st Div."/"3rd Div.").
+                fleet_name = f"{side} {ofleet.name}/{ofm.name}"
                 if fleet_name in self.fleets:
                     raise ValueError(f"fleet {fleet_name!r} already exists")
                 anchor = orderparse.local_to_map(center, crs,
@@ -620,6 +625,10 @@ class Game:
     # --- detection ---
 
     def _cross_pairs(self, sub):
+        # Traverse fleet -> formation -> ship: ship_positions(sub) already aggregates
+        # the exact xy of every Ship across ALL of this Fleet's Formations.  Encounter
+        # granularity stays at the Ship level (the vertex-to-vertex case needs true
+        # per-ship Euclidean distance); only cross-side GB x GE pairs are produced.
         gb = [f for f in self.fleets.values() if f.side == 'GB' and f.is_active(sub)]
         ge = [f for f in self.fleets.values() if f.side == 'GE' and f.is_active(sub)]
         pairs = []

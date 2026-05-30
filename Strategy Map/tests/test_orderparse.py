@@ -343,5 +343,52 @@ class TestLoadOrder(unittest.TestCase):
             _os.remove(path)
 
 
+class TestCrossPairsLayers(unittest.TestCase):
+    def test_cross_pairs_traverses_all_ships(self):
+        # 一个 GB Fleet 通过 add formation 挂两个 Formation,_cross_pairs 应展开全部 Ship
+        g = fs.Game()
+        g.add_fleet("GB1", "GB", 0, "0,0", "E", 18, 2)
+        g.add_fleet("GE1", "GE", 0, "1,0", "W", 18, 2)
+        pairs = g._cross_pairs(0)
+        # GB 2 ship × GE 2 ship = 4 对(单 Formation 基线)
+        self.assertEqual(len(pairs), 4)
+        for d, fa, fb in pairs:
+            self.assertEqual(fa.side, "GB")
+            self.assertEqual(fb.side, "GE")
+
+    def test_encounter_rollback_unchanged(self):
+        # 两零偏移单纵 Fleet,某拍中心距 <vis,仍逐船判跨阵营、回退 S-1
+        g = fs.Game()
+        g.visibility = 20000.0
+        # 放近一些:相隔 ~19000 < vis,应立刻在第 1 拍命中 -> 回退到 sub0
+        g.add_fleet("GB1", "GB", 0, "0,0", "E", 18, 1)
+        gb = g.fleets["GB1"]
+        ge_anchor = (gb.anchor_xy[0] + 19000.0, gb.anchor_xy[1])
+        g.add_fleet("GE1", "GE", 0, "1,0", "W", 18, 1)
+        g.fleets["GE1"].anchor_xy = ge_anchor
+        g.fleets["GE1"].display_history = [(0, *ge_anchor)]
+        encs = g.step_turn()
+        self.assertTrue(encs)
+        self.assertEqual(g.state, fs.STATE_CONTACT)
+        # 报告中心 = Fleet 几何中心 lead_xy(roll)
+        e = encs[0]
+        roll = g.current_substep
+        self.assertAlmostEqual(e["gb_xy_roll"][0],
+                               g.fleets["GB1"].lead_xy(roll)[0], places=3)
+        self.assertAlmostEqual(e["gb_xy_roll"][1],
+                               g.fleets["GB1"].lead_xy(roll)[1], places=3)
+
+    def test_loaded_fleets_only_cross_side_pairs(self):
+        # 导入 GB+GE 后,_cross_pairs 只产出 GB×GE,绝不含同阵营对
+        g = fs.Game()
+        g.load_order_file(GB_FILE, "GB", "0,0")
+        g.load_order_file(GE_FILE, "GE", "20,0")
+        pairs = g._cross_pairs(0)
+        self.assertTrue(pairs)
+        for d, fa, fb in pairs:
+            self.assertEqual(fa.side, "GB")
+            self.assertEqual(fb.side, "GE")
+
+
 if __name__ == "__main__":
     unittest.main()
