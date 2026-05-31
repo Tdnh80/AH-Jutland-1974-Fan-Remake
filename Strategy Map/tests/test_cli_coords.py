@@ -23,5 +23,28 @@ class TestCliCoords(unittest.TestCase):
         self.assertIn("A13", fs.micro_str(x + 4000, y))
 
 
+class TestEdgeCenter(unittest.TestCase):
+    def test_edge_center_each_dir_is_apothem_from_centre(self):
+        c = fs.hex_center_xy(3, 1)
+        for d in ('E', 'W', 'NE', 'NW', 'SE', 'SW'):
+            ec = fs.edge_center(3, 1, d)
+            ux, uy = fs.DIRVEC[d]
+            self.assertAlmostEqual(ec[0], c[0] + fs.APOTHEM * ux, places=3)
+            self.assertAlmostEqual(ec[1], c[1] + fs.APOTHEM * uy, places=3)
+
+    def test_entry_edge_is_behind_heading(self):
+        # heading E -> entry edge is the W edge (= centre - APOTHEM along E)
+        c = fs.hex_center_xy(0, 0)
+        ee = fs.entry_edge_center(0, 0, 'E')
+        self.assertAlmostEqual(ee[0], c[0] - fs.APOTHEM, places=3)
+        self.assertAlmostEqual(ee[1], c[1], places=3)
+
+    def test_entry_edge_ns_falls_back_to_centre(self):
+        # N/S are vertex directions (no edge) -> fall back to hex centre
+        c = fs.hex_center_xy(2, 2)
+        self.assertEqual(fs.entry_edge_center(2, 2, 'N'), c)
+        self.assertEqual(fs.entry_edge_center(2, 2, 'S'), c)
+
+
 if __name__ == '__main__':
     unittest.main()

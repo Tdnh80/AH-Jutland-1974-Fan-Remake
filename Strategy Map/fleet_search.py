@@ -159,6 +159,22 @@ def _axial_dist(a, b):
     return (abs(dq) + abs(dr) + abs(dq + dr)) // 2
 
 
+def edge_center(q, r, d):
+    """该格在方向 d 的边中心 = 格心 + APOTHEM·DIRVEC[d](d 须为 6 个边方向之一)。"""
+    cx, cy = hex_center_xy(q, r)
+    ux, uy = DIRVEC[d]
+    return (cx + APOTHEM * ux, cy + APOTHEM * uy)
+
+
+def entry_edge_center(q, r, course):
+    """舰队「进入边」中心 = 航向后方那条边(OPPOSITE[course])的中心。
+    course 为 N/S(顶点方向,无边)时退化为格心。"""
+    opp = OPPOSITE.get(course)
+    if opp is None:
+        return hex_center_xy(q, r)
+    return edge_center(q, r, opp)
+
+
 def hex_neighbour(h, d):
     dq, dr = NEIGH[d]
     return (h[0] + dq, h[1] + dr)
