@@ -168,7 +168,8 @@ formation GE1 echelon left absolute 45  # GE1 改 45° 斜队,左展,方向固�
 
 **`loadorder <GB|GE> <文件> [格名] [航速]`**
 直接从战斗序列文件(`GBformation.txt` / `GEformation.txt`)导入整方编组。
-GB 会建出 `GB BS`、`GB BCF` 两支舰队,GE 建出 `GE BS`、`GE SG`,各自下挂十几个小队。
+GB 会建出 `GB-BS`、`GB-BCF` 两支舰队,GE 建出 `GE-BS`、`GE-SG`,各自下挂十几个小队。
+(舰队名用**连字符**连接,中间没有空格,这样 `course GB-BCF NE` 这种命令才能正确选中它。)
 
 ```
 loadorder GB GBformation.txt 0,0

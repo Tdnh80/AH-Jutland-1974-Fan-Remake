@@ -165,6 +165,8 @@ class TestParseBattle(unittest.TestCase):
         self.assertEqual(gb_bs.initial_course, "SE")
         ge_sg = self.ge.fleets[1]
         self.assertEqual(ge_sg.initial_course, "NW")
+        # GE BS 的 Initial Course 已改为 N(布局参考轴,N/S 不可操舵但可作 0° 轴)
+        self.assertEqual(self.ge.fleets[0].initial_course, "N")
 
     def test_gb_bs_formation_count_13(self):
         # 11 named rows + 2CS appears twice = 13 (2CS 两行各成独立 Formation)
@@ -230,21 +232,22 @@ class TestParseBattle(unittest.TestCase):
         self.assertEqual(stu.note, "")
 
     def test_gb_2cs_two_formations(self):
+        # 文件已用 2CS-A / 2CS-B 显式区分,无需去重后缀,也无 note
         fms = [f for f in self.gb.fleets[0].formations if f.name.startswith("2CS")]
         self.assertEqual(len(fms), 2)
         names = sorted(f.name for f in fms)
-        self.assertEqual(names, ["2CS#1", "2CS#2"])
-        cs1 = [f for f in fms if f.name == "2CS#1"][0]
-        cs2 = [f for f in fms if f.name == "2CS#2"][0]
-        # #1: Deployment R, 28350L -> offset (26350, +28350), deploy right
+        self.assertEqual(names, ["2CS-A", "2CS-B"])
+        cs1 = [f for f in fms if f.name == "2CS-A"][0]
+        cs2 = [f for f in fms if f.name == "2CS-B"][0]
+        # A: Deployment R, 28350L -> offset (26350, +28350), deploy right
         self.assertEqual((cs1.offset_fwd, cs1.offset_left), (26350.0, 28350.0))
         self.assertEqual(cs1.deploy, "right")
-        # #2: Deployment L, 28350R -> offset (26350, -28350), deploy left
+        # B: Deployment L, 28350R -> offset (26350, -28350), deploy left
         self.assertEqual((cs2.offset_fwd, cs2.offset_left), (26350.0, -28350.0))
         self.assertEqual(cs2.deploy, "left")
         self.assertEqual(cs1.spacing, 12150.0)
         self.assertEqual(cs2.spacing, 12150.0)
-        self.assertNotEqual(cs1.note, "")
+        self.assertEqual(cs1.note, "")
 
     # --- single-ship units ---
     def test_ge_stettin_single(self):
@@ -279,8 +282,8 @@ class TestLoadOrder(unittest.TestCase):
         names = g.load_order_file(GB_FILE, "GB", "0,0")
         self.assertEqual(len(names), 2)            # BS + BCF
         self.assertEqual(len(g.fleets), 2)
-        bs = g.fleets["GB BS"]
-        bcf = g.fleets["GB BCF"]
+        bs = g.fleets["GB-BS"]
+        bcf = g.fleets["GB-BCF"]
         self.assertEqual(len(bs.formations), 13)
         self.assertEqual(len(bcf.formations), 6)
 
@@ -289,13 +292,20 @@ class TestLoadOrder(unittest.TestCase):
         names = g.load_order_file(GE_FILE, "GE", "0,0")
         self.assertEqual(len(names), 2)            # BS + SG
         self.assertEqual(len(g.fleets), 2)
-        self.assertEqual(len(g.fleets["GE BS"].formations), 12)
-        self.assertEqual(len(g.fleets["GE SG"].formations), 6)
+        self.assertEqual(len(g.fleets["GE-BS"].formations), 12)
+        self.assertEqual(len(g.fleets["GE-SG"].formations), 6)
+
+    def test_loadorder_ge_accepts_initial_course_N(self):
+        # N 作 initial_course(布局轴)应能 loadorder 成功,不再因不在 6 个航向而报错
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        self.assertEqual(g.fleets["GE-BS"].initial_course, "N")
+        self.assertEqual(g.fleets["GE-BS"].course, "N")
 
     def test_loaded_fleet_side_and_course(self):
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
-        bs = g.fleets["GB BS"]
+        bs = g.fleets["GB-BS"]
         self.assertEqual(bs.side, "GB")
         # initial_course propagated; default speed 18
         self.assertEqual(bs.initial_course, "SE")
@@ -308,7 +318,7 @@ class TestLoadOrder(unittest.TestCase):
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
         center = fs.hex_center_xy(0, 0)
-        bs = g.fleets["GB BS"]
+        bs = g.fleets["GB-BS"]
         self.assertAlmostEqual(bs.anchor_xy[0], center[0], places=3)
         self.assertAlmostEqual(bs.anchor_xy[1], center[1], places=3)
         # 3BCS: offset (32400F, 13000L), initial_course SE, absolute
@@ -324,7 +334,7 @@ class TestLoadOrder(unittest.TestCase):
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
         center = fs.hex_center_xy(0, 0)
-        sg = g.fleets["GE SG"]
+        sg = g.fleets["GE-SG"]
         fm = [m for m in sg.formations if m.name == "1SG"][0]
         self.assertEqual((fm.offset_fwd, fm.offset_left), (0.0, 0.0))
         got = sg._formation_center_xy(fm, sg.anchor_substep)
@@ -334,7 +344,7 @@ class TestLoadOrder(unittest.TestCase):
     def test_bs_fleet_holds_all_divisions_with_ships(self):
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
-        bs = g.fleets["GB BS"]
+        bs = g.fleets["GB-BS"]
         third = [m for m in bs.formations if m.name == "3rd Div."][0]
         self.assertEqual(len(third.ships), 4)
 
@@ -342,7 +352,7 @@ class TestLoadOrder(unittest.TestCase):
         import tempfile, os as _os
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
-        bs = g.fleets["GE BS"]
+        bs = g.fleets["GE-BS"]
         anchor0 = tuple(bs.anchor_xy)
         st0 = [m for m in bs.formations if m.name == "Stettin"][0]
         off0 = (st0.offset_fwd, st0.offset_left)
@@ -352,7 +362,7 @@ class TestLoadOrder(unittest.TestCase):
             g.save(path)
             g2 = fs.Game()
             g2.load(path)
-            bs2 = g2.fleets["GE BS"]
+            bs2 = g2.fleets["GE-BS"]
             self.assertAlmostEqual(bs2.anchor_xy[0], anchor0[0], places=3)
             self.assertAlmostEqual(bs2.anchor_xy[1], anchor0[1], places=3)
             self.assertEqual(len(bs2.formations), 12)

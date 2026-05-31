@@ -88,6 +88,10 @@ DIRVEC = {
     'NW': (-0.5, -_S3),
     'SE': (0.5, _S3),
     'SW': (-0.5, _S3),
+    # N/S 不是六角邻居方向(不可操舵、不在 NEIGH),仅作 initial_course 的布局参考轴
+    # (队形偏移 F/B/L/R 的 0° 轴),+y 朝南故 N=(0,-1)。
+    'N':  (0.0, -1.0),
+    'S':  (0.0, 1.0),
 }
 
 
@@ -539,8 +543,8 @@ class Game:
         """读编组文件 -> 每个 OrderFleet 实例化为一个运行期 Fleet,
         其下挂多个 Formation(各自保留相对 Fleet 几何中心的 offset)。
 
-        返回创建的运行期 Fleet 名列表。Fleet 名 = '<side> <OrderFleet>'
-        (side 前缀保证全局唯一:GB/GE 都有名为 "BS" 的 Fleet)。
+        返回创建的运行期 Fleet 名列表。Fleet 名 = '<side>-<OrderFleet>'(如 GB-BS、GB-BCF)
+        (side 前缀保证全局唯一:GB/GE 都有名为 "BS" 的 Fleet;连字符避免空格被 CLI 切词)。
         Fleet 几何中心锚在 start_hex 格心;各 Formation 的 offset_fwd/offset_left
         相对该中心,由 ship_positions 两段管线渲染(absolute 懒冻结 frozen_offset_xy,
         relative 每拍按当前 course 实算)。整组按一个 course/speed 作为一个 Fleet 机动。
@@ -555,9 +559,10 @@ class Game:
         created = []
         for ofleet in battle.fleets:
             crs = ofleet.initial_course
-            if crs not in NEIGH:
+            if crs not in DIRVEC:   # 允许 N/S 作布局参考轴(见 DIRVEC 注释)
                 raise ValueError(f"unsupported initial course {crs!r} in {ofleet.name}")
-            fleet_name = f"{side} {ofleet.name}"
+            # fleet 名不含空格,否则 CLI 按空格切词无法选中(如 'course GB-BCF NE')
+            fleet_name = f"{side}-{ofleet.name}"
             if fleet_name in self.fleets:
                 raise ValueError(f"fleet {fleet_name!r} already exists")
             run_fms = []
@@ -1319,19 +1324,25 @@ def plot_encounter_closeup(game, filename):
     except ImportError:
         raise RuntimeError("matplotlib not installed; pip install matplotlib")
 
-    # 计算包围盒:所有接敌格中心 + 邻格 的像素范围
-    all_hexes = set(game.contact_hexes)
-    for ch in game.contact_hexes:
-        for d in NEIGH:
-            all_hexes.add(hex_neighbour(ch, d))
-
-    pts = [hex_center_xy(*h) for h in all_hexes]
+    # 取景:贴合"涉及接敌的两支舰队全部船只"的最小范围,让队形排布看得清;
+    # 同时把接敌格也纳入。两队几乎重合时用最小跨度兜底,方形取景保持等比。
+    active = [f for f in game.fleets.values() if f.is_active(game.current_substep)]
+    rep = game.last_report
+    involved = set()
+    if rep:
+        for e in rep['encounters']:
+            involved.add(e['gb']); involved.add(e['ge'])
+    focus = [f for f in active if f.name in involved] or active
+    pts = [p for f in focus for _, p in f.ship_positions(game.current_substep)]
+    pts += [hex_center_xy(*h) for h in game.contact_hexes]
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-    margin = HEX_SIDE * 1.5
+    margin = HEX_SIDE * 0.45
     x_min, x_max = min(xs) - margin, max(xs) + margin
     y_min, y_max = min(ys) - margin, max(ys) + margin
-
-    active = [f for f in game.fleets.values() if f.is_active(game.current_substep)]
+    span = max(x_max - x_min, y_max - y_min, HEX_SIDE * 1.3)
+    mx0, my0 = (x_min + x_max) / 2, (y_min + y_max) / 2
+    x_min, x_max = mx0 - span / 2, mx0 + span / 2
+    y_min, y_max = my0 - span / 2, my0 + span / 2
 
     # grid
     r_lo = int(math.floor(y_min / (HEX_SIDE * _S3))) - 1

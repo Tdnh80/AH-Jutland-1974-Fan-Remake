@@ -144,9 +144,10 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 - `parse_relative_position("8000F 10000L")` → `(fwd, left)`(F+/B−/L+/R−,多分量相加,容错全角空格)。
 - `local_to_map(center, course, fwd, left)`:`forward_hat=DIRVEC[course]`、`left_hat=(fy,−fx)`(+y 朝南的左舷法向)。
 - 表头行只取每个 Fleet 的 Initial Course;数据行按全角破折号 `—` 切列,末列=Relative、倒二列=RelPos、中段扫 kind/spacing/deploy/turning。
-- 同名 Formation 加 `#k` 后缀消歧(如 GB BS 两组 `2CS`→`2CS#1/#2`)。**编组文件是权威数据,不做推断修正。**
+- 仅当文件中确有重名 Formation 才加 `#k` 后缀消歧(GB 文件现已用 `2CS-A`/`2CS-B` 显式区分,故不触发)。**编组文件是权威数据,不做推断修正。**
+- `initial_course` 接受 6 个六角航向 + **N/S**(布局参考轴;`_norm_course` 取前缀字母方向)。N/S 不在 `NEIGH`,不可操舵,只作队形偏移 F/B/L/R 的 0° 轴。
 
-`Game.load_order_file(path, side, start_hex, speed, activated)`:**每个 OrderFleet → 一个运行期 Fleet**(GB→`GB BS`+`GB BCF`,GE→`GE BS`+`GE SG`),Division 嵌为其 `formations`、各自保留 offset;Fleet 几何中心锚在 `start_hex` 格心。整组作为一个 Fleet 机动。
+`Game.load_order_file(path, side, start_hex, speed, activated)`:**每个 OrderFleet → 一个运行期 Fleet**(GB→`GB-BS`+`GB-BCF`,GE→`GE-BS`+`GE-SG`;**名用连字符不含空格**,否则 CLI 按空格切词无法选中),Division 嵌为其 `formations`、各自保留 offset;Fleet 几何中心锚在 `start_hex` 格心。整组作为一个 Fleet 机动。`initial_course` 校验放宽到 `DIRVEC` 键(含 N/S)。
 
 ---
 
