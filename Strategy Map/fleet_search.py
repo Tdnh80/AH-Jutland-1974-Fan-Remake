@@ -1459,7 +1459,9 @@ Commands
   list
   vis <yards>                                 0..36000 (cap = 1 hex width)
   time <HHMM>                                 set clock at substep 0 (default 0000)
-  plot [file.png]
+  plot [file.png]                             full board
+  plot order [file.png]                       order-of-battle view (one panel per fleet)
+  plot closeup [file.png]                      zoom to the encounter hexes (alias: encounter)
   demo [seed] [max_turns]
   save <file> / load <file>
   help / quit
@@ -1602,9 +1604,17 @@ def run_command(game, line):
         g.load(args[0]); print(f"  ok: loaded {args[0]!r}")
         print(g.list_status())
     elif cmd == 'plot':
-        if args and args[0].lower() == 'order':
+        sub = args[0].lower() if args else ''
+        if sub == 'order':
             fn = args[1] if len(args) > 1 else 'order.png'
             plot_order(g, fn); print(f"  ok: saved {fn}")
+        elif sub in ('closeup', 'encounter'):
+            fn = args[1] if len(args) > 1 else 'closeup.png'
+            plot_encounter_closeup(g, fn)
+            if g.contact_hexes:
+                print(f"  ok: saved {fn} (encounter close-up)")
+            else:
+                print(f"  ok: saved {fn} (no encounter yet — full board)")
         else:
             fn = args[0] if args else 'board.png'
             plot_state(g, fn); print(f"  ok: saved {fn}")

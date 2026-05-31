@@ -26,6 +26,18 @@ class TestCloseupSmoke(unittest.TestCase):
                 self.skipTest(f"matplotlib unavailable: {e}")
             self.assertTrue(os.path.exists(path) and os.path.getsize(path) > 0)
 
+    def test_plot_closeup_cli_command(self):
+        # `plot closeup <file>` 接敌后应产出特写图(别名 encounter)
+        g = head_on_to_contact()
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "cu.png")
+            try:
+                out = fs.execute_command(g, f'plot closeup "{path}"')
+            except RuntimeError as e:
+                self.skipTest(f"matplotlib unavailable: {e}")
+            self.assertIn("close-up", out)
+            self.assertTrue(os.path.exists(path) and os.path.getsize(path) > 0)
+
 
 if __name__ == '__main__':
     unittest.main()

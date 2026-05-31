@@ -166,7 +166,7 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 
 - `plot_state(game, filename)`:全局图,范围自适应所有舰队历史轨迹与计划路线。过去航迹由 `display_history` 连线(转向格心顶点已在 `_apply_pending_turn` 插入,故在格心拐弯)。
 - `plot_order(game, filename)`:编组校验图,**每个 Fleet 一个自适应子图**;画 Fleet 几何中心(空心方块)+ Initial Course 箭头 + 各 Formation 中心/内部 Ship;带 `note` 的 Formation 橙圈高亮。自动挑 CJK 字体渲染中文 note。
-- `plot_encounter_closeup(game, filename)`:接敌特写,范围限定 `contact_hexes` 及邻格;空则退化为 `plot_state`。
+- `plot_encounter_closeup(game, filename)`:接敌特写,范围限定 `contact_hexes` 及邻格;空则退化为 `plot_state`。CLI 命令 `plot closeup [file]`(别名 `plot encounter`)。
 - 均 `matplotlib.use('Agg')`,`matplotlib` 不可用时抛 `RuntimeError`。
 
 ---
