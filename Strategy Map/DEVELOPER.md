@@ -39,6 +39,10 @@ y = HEX_SIDE × (√3/2) × r
 
 `HEX_SIDE = 36000.0`(单位:码)。原点 `(0,0)` 是任意参考,改 `hex_center_xy` 的偏移即可重定位。
 
+### 坐标基准:格边中心(v6)
+
+舰队**常态静止点 = 六角格边中心**(非格心)。`edge_center(q,r,d) = hex_center_xy(q,r) + APOTHEM·DIRVEC[d]`(`APOTHEM=18000`);`entry_edge_center(q,r,course) = edge_center(q,r,OPPOSITE[course])`(进入边 = 航向后方那条边;course=N/S 无边 → 退化为格心)。`add_fleet`/`relocate`/`load_order_file`/`schedule` 一律锚到进入边中心。`micro_position`/`micro_str` 报告相对**最近的边中心**(恰在格心报 `centre`)。引擎其余部分锚点无关,不受影响。
+
 ### I/O 边界格名
 
 `coords.py` 提供双向转换:
@@ -137,6 +141,7 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 - `_apply_pending_turn(f, t_hit)`:钉锚到格心、`anchor_substep=t_hit`、改 course/(speed)、记 `incoming_dir = DIRVEC[旧course]`、清 pending、**把 `(t_hit, 格心)` 插进 `display_history`**(绘图航迹在格心拐弯,不切角)。
 - `_xy_at_arc` 负弧分支:非 scheduled 且有 `incoming_dir` 时沿旧航向反推,使后船在到达同一格心前留在进入腿上(真鱼贯)。
 - 进 CONTACT(`_resolve_encounter`)清空所有 fleet 的 pending。180° 掉头简化为排队到前方格心反向。
+- **格边中心基准下**:静止点退到进入边中心,格心只在前方半格,故 18 节 `course` 在 **sub3** 转向(12kn sub4.5、24kn sub2.25)——`next_cell_center_along` 本身不变,是落点改变带来的提前。
 
 ## 编组导入(orderparse)
 

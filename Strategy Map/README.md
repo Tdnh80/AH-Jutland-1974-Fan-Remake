@@ -89,6 +89,15 @@ demo 17
 | `18` kn | 3 格 | 20 分钟/格 |
 | `24` kn | 4 格 | 15 分钟/格 |
 
+### 舰队停在哪:六角格的"边",不是"心"
+
+舰队**平时停在六角格的边中心**,而不是格子正中。你说"进入 K10、航向 E",意思是它正停在
+**K10 的西边中心**(刚从西边进来、正要往东穿过这一格)。18 节一回合刚好穿过一格:从进入边
+走到对面那条边,格心是这一拍**中点**。
+
+下达 `course` 改向时,舰队会先走到**前方的格心**才转(18 节即半个回合后),这符合兵棋
+"走到格中央再决定拐弯"的节奏。
+
 ### 舰队与船
 
 - 一支**舰队(fleet)**是一组船,默认排成单纵阵(line-ahead),船距 500 码。
@@ -214,13 +223,13 @@ list                        # 看当时的盘面
 ### `list` 的一行
 
 ```
-GB1          [GB] A14  9000 yd from centre → SE edge  course=SE speed=18kn ships=4 sched→B15 (6st)
-^^^           ^^  ^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^ ^^^^^^^^^ ^^^^^^^^ ^^^^^^^^^^^^^^^
-舰队名        阵营  格名  微观位置:距格心多少码、朝哪条格边     航向      航速     船数     调度:终点+剩几个小拍
+GB1          [GB] A14 E edge-centre +9000yd  course=SE speed=18kn ships=4 sched→B15 (6st)
+^^^           ^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^ ^^^^^^^^^ ^^^^^^^^ ^^^^^^^^^^^^^^^
+舰队名        阵营  微观位置:在哪个格、最近哪条边中心、离它多少码   航向      航速     船数     调度:终点+剩几个小拍
 ```
 
-微观位置就是你要的"格边 + 到格心距离":这艘旗舰此刻在 `A14` 格里、距格心 9000 码、
-偏向 SE 那条边。其他船按相对队形自己摆即可。
+微观位置以**格边中心**为基准:这艘旗舰此刻在 `A14` 格里、最近的是 E 边中心、离它 9000 码
+(恰在边中心则不带 `+…yd`;恰在格心则显示 `A14 centre`)。其他船按相对队形自己摆即可。
 
 ### 接敌报告
 
@@ -228,12 +237,12 @@ GB1          [GB] A14  9000 yd from centre → SE edge  course=SE speed=18kn shi
 ╔══ ENCOUNTER (pre-contact, frozen) ══
 ║  T0 sub4 31/05/16 0810   vis=20000 yd
 contact1: GB1 ⟷ GE1
-  GB1    B14  12000 yd from centre → NW edge
-  GE1    B14  12000 yd from centre → SE edge
+  GB1    B14 NW edge-centre +6000yd
+  GE1    B14 SE edge-centre +6000yd
   closest pair now: 24000 yd (>= vis: clean state)
   [aux] projected contact 0810 (+3.3 min), dist = vis:
-        GB1  B14  10000 yd from centre → NW edge
-        GE1  B14  10000 yd from centre → SE edge
+        GB1  B14 NW edge-centre +4000yd
+        GE1  B14 SE edge-centre +4000yd
 ```
 
 要点:

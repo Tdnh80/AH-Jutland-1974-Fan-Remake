@@ -94,9 +94,15 @@ python -m unittest discover -s tests -t .
 - 转向应用时把**格心顶点 `(t_hit, 中心)`** 插进 `display_history`,绘图航迹才在格心拐弯(否则 10min 一拍的弦会切角)。
 - 进接敌态(`_resolve_encounter`)清空所有 fleet 的 pending(与清 schedule 对称)。180° 掉头简化为排队到前方格心反向。
 
+### 坐标基准:格边中心(edge-center,v6)
+- **常态静止/锚点 = 六角格边中心**,不是格心。"进入 K10、航向 E" = K10 的**西边**(航向后方那条边)中心 = `格心 + APOTHEM·DIRVEC[OPPOSITE[course]]`(`entry_edge_center`;APOTHEM=18000)。`new`/`relocate`/`loadorder`/`schedule` 一律锚到进入边中心(course=N/S 无边 → 退化为格心)。
+- **转向点仍是格心**:`course` 排队到下一个格心(`next_cell_center_along` 不变);因静止点退到边、格心只在前方半格,**18 节在 sub3 转向**(12kn sub4.5、24kn sub2.25),解了"转向拖到下回合"。18 节一回合 = 进入边 →(sub3 格心,在此转)→ 下一条边中心。
+- **报告基准 = 格边中心**:`micro_str` 输出 `(q,r) <dir> edge-centre [+Xyd]`,恰在格心报 `centre`。
+- 边中心本身是真实点(非吸附);边上 `xy_to_hex` 会 round 到一侧,属已知边界行为(转向点/报告取最近边中心均稳定)。
+
 ### 运动学 / 队形几何
 - 单纵阵默认船距 500 码(编组文件里 GE 用 550、GE SG 用 600)。船名 `<fleet>-1`(旗舰)…
-- 位置内部存**精确 (x,y)**,沿折线按弧长参数化;**报告时绝不吸附格心**。`anchor_substep` 可为 float。
+- 位置内部存**精确 (x,y)**,沿折线按弧长参数化;**运动中不吸附**。`anchor_substep` 可为 float。
 - `ship_positions(sub)` 对外仍返回扁平 `[(name,xy),…]`;零偏移单 Formation 退化为旧的鱼贯/刚体,行为不变(零回归)。
 
 ### 接敌后状态机(v5)
