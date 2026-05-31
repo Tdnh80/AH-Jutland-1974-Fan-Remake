@@ -15,8 +15,8 @@ class TestCliCoords(unittest.TestCase):
     def test_add_fleet_accepts_letter_number(self):
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "A13", "E", 18, 1)
-        # A13 -> (13,1);中心应落在该格中心
-        self.assertEqual(fs.xy_to_hex(*g.fleets["F"].anchor_xy), (13, 1))
+        # A13 -> (13,1);航向 E -> 锚在该格西边中心(进入边)
+        self.assertEqual(g.fleets["F"].anchor_xy, fs.entry_edge_center(13, 1, "E"))
 
     def test_micro_str_uses_letter_number(self):
         x, y = fs.hex_center_xy(13, 1)

@@ -3,14 +3,15 @@ import fleet_search as fs
 
 
 def head_on_to_contact():
-    """复刻回归用的正面对冲:接敌定格在 sub10,双方中心同格 (2,0)。"""
+    """正面对冲:边锚后两队各后移 18000,接敌定格在 sub13,双方中心同格 (2,0)。"""
     g = fs.Game()                       # vis 默认 20000
     g.add_fleet("GB1", "GB", 0, "0,0", "E", 18, 3)
     g.add_fleet("GE1", "GE", 0, "4,0", "W", 18, 2)
     g.schedule("GB1", 18, ["1,0", "2,0", "3,0"])
     g.schedule("GE1", 18, ["3,0", "2,0", "1,0"])
     g.step_turn()                       # -> sub6, no contact
-    encs = g.step_turn()                # -> contact, roll to sub10
+    g.step_turn()                       # -> sub12, no contact
+    encs = g.step_turn()                # -> contact, roll to sub13
     return g, encs
 
 
@@ -29,15 +30,23 @@ class TestContactState(unittest.TestCase):
     def test_no_double_turn_count(self):
         # 接敌只把 current_substep 设到 roll 一次,不叠加回合
         g, _ = head_on_to_contact()
-        self.assertEqual(g.current_substep, 10)
+        self.assertEqual(g.current_substep, 13)
 
 
 class TestAdjacentEntrants(unittest.TestCase):
+    def _place_at_center(self, g, name, side, q, r, course):
+        # 直接置于格心(边锚落在格边界会被 xy_to_hex round 到一侧,这里要明确在 (q,r) 内)
+        g.add_fleet(name, side, 0, "0,0", course, 18, 1)
+        f = g.fleets[name]
+        f.anchor_xy = fs.hex_center_xy(q, r)
+        f.anchor_substep = g.current_substep
+        f.course = course
+        f.display_history = [(g.current_substep, *f.anchor_xy)]
+
     def test_entrant_heading_into_contact_hex_is_detected(self):
-        g, _ = head_on_to_contact()       # state=CONTACT, contact_hexes={(2,0)}, sub=10
-        # 第三舰队当前中心在相邻格 (3,0),航向 W(朝接敌格 (2,0))
-        g.add_fleet("X", "GB", 0, "5,0", "W", 18, 1)
-        g.relocate("X", "3,0", "W", 18)   # anchor at current sub, center=(3,0), course W
+        g, _ = head_on_to_contact()       # state=CONTACT, contact_hexes={(2,0)}, sub=13
+        # 第三舰队明确在相邻格 (3,0) 格心,航向 W(朝接敌格 (2,0))
+        self._place_at_center(g, "X", "GB", 3, 0, "W")
         entrants = g.adjacent_entrants()
         names = [e[0] for e in entrants]
         self.assertIn("X", names)
@@ -46,8 +55,7 @@ class TestAdjacentEntrants(unittest.TestCase):
 
     def test_entrant_heading_away_is_not_detected(self):
         g, _ = head_on_to_contact()
-        g.add_fleet("Y", "GB", 0, "5,0", "E", 18, 1)
-        g.relocate("Y", "3,0", "E", 18)   # 航向 E,驶离接敌格
+        self._place_at_center(g, "Y", "GB", 3, 0, "E")   # 航向 E,驶离接敌格
         names = [e[0] for e in g.adjacent_entrants()]
         self.assertNotIn("Y", names)
 

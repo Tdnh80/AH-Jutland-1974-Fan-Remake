@@ -10,7 +10,7 @@ def head_on_to_contact():
     g.add_fleet("GE1", "GE", 0, "4,0", "W", 18, 2)
     g.schedule("GB1", 18, ["1,0", "2,0", "3,0"])
     g.schedule("GE1", 18, ["3,0", "2,0", "1,0"])
-    g.step_turn(); g.step_turn()
+    g.step_turn(); g.step_turn(); g.step_turn()   # 边锚后接敌在第 3 回合(sub13)
     return g
 
 

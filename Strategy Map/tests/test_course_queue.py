@@ -44,7 +44,8 @@ class TestCourseChangeQueues(unittest.TestCase):
         g.course_change("F", "NE")
         self.assertEqual(f.course, "E")            # 未立即改向
         self.assertEqual(f.pending_course, "NE")
-        self.assertAlmostEqual(f.pending_turn_xy[0], 36000.0, delta=1e-3)
+        # 锚在 (0,0) 西边中心,沿 E 前方的下一个格心 = (0,0) 格心
+        self.assertAlmostEqual(f.pending_turn_xy[0], 0.0, delta=1e-3)
         self.assertAlmostEqual(f.pending_turn_xy[1], 0.0, delta=1e-3)
 
     def test_pending_speed_recorded(self):
@@ -110,33 +111,32 @@ class TestStepTurnArrival(unittest.TestCase):
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 1)
         f = g.fleets["F"]
         g.course_change("F", "SE")
-        g.step_turn()                       # sub0 -> sub6, reaches (36000,0) at sub6
+        g.step_turn()                       # 锚在 (0,0) 西边,格心 (0,0) 在 sub3
         self.assertEqual(f.course, "SE")
-        self.assertAlmostEqual(f.anchor_substep, 6.0, delta=TOL)
-        self.assertAlmostEqual(f.anchor_xy[0], 36000.0, delta=1e-3)
+        self.assertAlmostEqual(f.anchor_substep, 3.0, delta=TOL)
+        self.assertAlmostEqual(f.anchor_xy[0], 0.0, delta=1e-3)   # (0,0) 格心
         self.assertAlmostEqual(f.anchor_xy[1], 0.0, delta=1e-3)
         self.assertIsNone(f.pending_course)
 
-    def test_turn_timing_12kn_needs_two_turns(self):
+    def test_turn_timing_12kn_at_sub4_5(self):
+        # 边锚后格心只在前方半格(18000);12kn 4000/拍 -> sub4.5,首回合内即转
         g = fs.Game()
-        g.add_fleet("F", "GB", 0, "0,0", "E", 12, 1)   # 4000/sub, reach at sub9
-        f = g.fleets["F"]
-        g.course_change("F", "SE")
-        g.step_turn()                       # sub6: arc 24000 < 36000, not yet
-        self.assertEqual(f.course, "E")
-        self.assertEqual(f.pending_course, "SE")
-        g.step_turn()                       # sub12: crosses at sub9
-        self.assertEqual(f.course, "SE")
-        self.assertAlmostEqual(f.anchor_substep, 9.0, delta=TOL)
-
-    def test_turn_timing_24kn_half_substep(self):
-        g = fs.Game()
-        g.add_fleet("F", "GB", 0, "0,0", "E", 24, 1)   # 8000/sub, reach at sub4.5
+        g.add_fleet("F", "GB", 0, "0,0", "E", 12, 1)
         f = g.fleets["F"]
         g.course_change("F", "SE")
         g.step_turn()
         self.assertEqual(f.course, "SE")
         self.assertAlmostEqual(f.anchor_substep, 4.5, delta=TOL)
+
+    def test_turn_timing_24kn_at_sub2_25(self):
+        # 24kn 8000/拍 -> 18000/8000 = sub2.25
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 24, 1)
+        f = g.fleets["F"]
+        g.course_change("F", "SE")
+        g.step_turn()
+        self.assertEqual(f.course, "SE")
+        self.assertAlmostEqual(f.anchor_substep, 2.25, delta=TOL)
 
     def test_turn_point_is_a_hex_centre(self):
         g = fs.Game()
@@ -144,35 +144,35 @@ class TestStepTurnArrival(unittest.TestCase):
         f = g.fleets["F"]
         g.course_change("F", "SE")
         g.step_turn()
-        self.assertEqual(f.anchor_xy, fs.hex_center_xy(1, 0))
+        self.assertEqual(f.anchor_xy, fs.hex_center_xy(0, 0))   # 转向点 = (0,0) 格心
 
     def test_succession_trailing_ship_stays_on_old_leg(self):
-        # 鱼贯:旗舰在格心 (1,0) 转 SE 后,后船仍在旧 E 腿上(y≈0, x<36000)
+        # 鱼贯:旗舰在格心 (0,0) 转 SE(sub3);该刻后船仍在旧 E 腿上(x<0, y≈0)
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 3)
         f = g.fleets["F"]
         g.course_change("F", "SE")
         g.step_turn()
-        ships = f.ship_positions(g.current_substep)   # sub6
+        ships = f.ship_positions(3)   # 转向那一刻
         lead = ships[0][1]
         s2 = ships[1][1]
-        self.assertAlmostEqual(lead[0], 36000.0, delta=1e-3)
+        self.assertAlmostEqual(lead[0], 0.0, delta=1e-3)   # 旗舰在 (0,0) 格心
         self.assertAlmostEqual(lead[1], 0.0, delta=1e-3)
-        self.assertLess(s2[0], 36000.0)
+        self.assertLess(s2[0], 0.0)                        # 后船落后,在旧 E 腿(西侧)
         self.assertAlmostEqual(s2[1], 0.0, delta=1.0)
-        # 再走一拍,旗舰进入 SE 段(y>0)
-        self.assertGreater(f.lead_xy(g.current_substep + 1)[1], 0.0)
+        # 旗舰随后进入 SE 段(y>0)
+        self.assertGreater(f.lead_xy(4)[1], 0.0)
 
     def test_180_reversal_queues_to_forward_centre(self):
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 1)
         f = g.fleets["F"]
         g.course_change("F", "W")
-        self.assertEqual(f.pending_turn_xy, fs.hex_center_xy(1, 0))   # 前方格心
+        self.assertEqual(f.pending_turn_xy, fs.hex_center_xy(0, 0))   # 前方格心
         g.step_turn()
         self.assertEqual(f.course, "W")
-        self.assertEqual(f.anchor_xy, fs.hex_center_xy(1, 0))
-        self.assertLess(f.lead_xy(g.current_substep + 1)[0], 36000.0)   # 折返向西
+        self.assertEqual(f.anchor_xy, fs.hex_center_xy(0, 0))
+        self.assertLess(f.lead_xy(g.current_substep + 1)[0], 0.0)   # 折返向西(过 (0,0) 往西)
 
 
 class TestEncounterClearsPending(unittest.TestCase):

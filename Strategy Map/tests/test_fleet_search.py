@@ -98,9 +98,9 @@ class TestLineAheadFormation(unittest.TestCase):
     def test_position_not_snapped_to_centre(self):
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 3)
-        # 走 1 拍(6000 码,< 1 格),旗舰应在格内非格心处
+        # 锚在 (0,0) 西边中心 (-18000);走 1 拍(6000)-> -12000,格内非格心
         x, y = g.fleets["F"].lead_xy(1)
-        self.assertAlmostEqual(x, 6000.0, delta=TOL)
+        self.assertAlmostEqual(x, -12000.0, delta=TOL)
         self.assertNotEqual((x, y), fs.hex_center_xy(*fs.xy_to_hex(x, y)))
 
 
@@ -161,27 +161,30 @@ class TestEncounterRollback(unittest.TestCase):
         return g
 
     def test_rollback_to_clean_substep(self):
+        # 边锚后两队各后移 18000(共 +36000 间距),接敌从 sub10/11 推迟到 sub13/14。
         g = self._head_on()
-        self.assertIsNone(g.step_turn())                # 第 1 回合 (→sub6) 无接触
-        encs = g.step_turn()                            # 第 2 回合命中
+        self.assertIsNone(g.step_turn())                # sub6,无接触
+        self.assertIsNone(g.step_turn())                # sub12,仍 >= vis(dist 36000)
+        encs = g.step_turn()                            # 第 3 回合命中
         self.assertTrue(encs)
 
-        # 定格在 S-1 = sub10(S=sub11 才首次 <vis)
-        self.assertEqual(g.current_substep, 10)
+        # 定格在 S-1 = sub13(S=sub14 才首次 <vis)
+        self.assertEqual(g.current_substep, 13)
 
         # 定格拍是「干净的」:所有跨阵营对都 >= vis
         for d, _, _ in g._cross_pairs(g.current_substep):
             self.assertGreaterEqual(d, g.visibility)
 
         # 而下一拍确实存在 <vis 的对(说明确实在临界点回退)
-        self.assertTrue(any(d < g.visibility for d, _, _ in g._cross_pairs(11)))
+        self.assertTrue(any(d < g.visibility for d, _, _ in g._cross_pairs(14)))
 
         e = encs[0]
         self.assertGreaterEqual(e['dist_roll'], g.visibility)
-        self.assertTrue(10 <= e['contact_sub'] <= 11)
+        self.assertTrue(13 <= e['contact_sub'] <= 14)
 
     def test_projected_contact_is_at_visibility(self):
         g = self._head_on()
+        g.step_turn()
         g.step_turn()
         encs = g.step_turn()
         e = encs[0]
@@ -194,6 +197,7 @@ class TestEncounterRollback(unittest.TestCase):
         g = self._head_on()
         g.step_turn()
         g.step_turn()
+        g.step_turn()                                   # 接敌在第 3 回合(sub14)
         self.assertFalse(g.fleets["GB1"].scheduled)
         self.assertFalse(g.fleets["GE1"].scheduled)
         self.assertIsNotNone(g.last_report)

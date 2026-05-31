@@ -25,7 +25,8 @@ class TestReplay(unittest.TestCase):
             g.replay_to(k)
             self.assertEqual(g.current_substep, 6 * k)        # clock 由 substep 派生 -> 自洽
             x, y = g.fleets["GB1"].lead_xy(g.current_substep)
-            self.assertAlmostEqual(x, 6 * k * 6000.0, delta=1.0)
+            # 锚在 (0,0) 西边中心 (-18000),沿 E:x = -18000 + 6k·6000
+            self.assertAlmostEqual(x, -18000.0 + 6 * k * 6000.0, delta=1.0)
             self.assertAlmostEqual(y, 0.0, delta=1.0)
 
     def test_replay_out_of_range_raises(self):

@@ -550,7 +550,7 @@ class Game:
         h = parse_cell_or_hex(hex_str)
         ships = [Ship(f"{name}-{i+1}", i) for i in range(n)]
         f = Fleet(name=name, side=side, activated_turn=activated,
-                  anchor_xy=hex_center_xy(*h), anchor_substep=activated * 6,
+                  anchor_xy=entry_edge_center(*h, course), anchor_substep=activated * 6,
                   course=course, speed=speed, initial_course=course,
                   ships=ships)
         f.display_history.append((activated * 6, *f.anchor_xy))
@@ -572,7 +572,6 @@ class Game:
             raise ValueError(f"speed in {VALID_SPEEDS}")
         battle = orderparse.parse_battle_file(path, side)
         h = parse_cell_or_hex(start_hex)
-        center = hex_center_xy(*h)
         created = []
         for ofleet in battle.fleets:
             crs = ofleet.initial_course
@@ -596,13 +595,14 @@ class Game:
                     frozen_offset_xy=None,   # absolute 模式由 ship_positions 懒冻结
                     note=ofm.note,
                 ))
+            fleet_anchor = entry_edge_center(*h, crs)   # crs=N/S 无边 -> 退化为格心
             f = Fleet(
                 name=fleet_name, side=side, activated_turn=activated,
-                anchor_xy=center, anchor_substep=activated * 6,
+                anchor_xy=fleet_anchor, anchor_substep=activated * 6,
                 course=crs, speed=speed, initial_course=crs,
                 formations=run_fms,
             )
-            f.display_history.append((activated * 6, *center))
+            f.display_history.append((activated * 6, *fleet_anchor))
             self.fleets[fleet_name] = f
             created.append(fleet_name)
         return created
@@ -653,7 +653,7 @@ class Game:
         f = self._get(name)
         if course not in NEIGH: raise ValueError("bad course")
         if speed not in VALID_SPEEDS: raise ValueError("bad speed")
-        f.anchor_xy = hex_center_xy(*parse_cell_or_hex(hex_str))
+        f.anchor_xy = entry_edge_center(*parse_cell_or_hex(hex_str), course)
         f.anchor_substep = self.current_substep
         f.course = course; f.speed = speed
         f.scheduled = False; f.schedule_end_substep = 0.0; f.waypoints = []
@@ -696,9 +696,10 @@ class Game:
             if direction_between(a, b) is None:
                 raise ValueError(f"{hex_name(*a)} -> {hex_name(*b)} not adjacent")
             # 180-degree reversal now allowed (v4); no reversal check
-        f.anchor_xy = hex_center_xy(*cur_hex)
+        _crs = direction_between(chain[0], chain[1])
+        f.anchor_xy = entry_edge_center(*cur_hex, _crs)   # 起点退到进入边中心
         f.anchor_substep = self.current_substep
-        f.course = direction_between(chain[0], chain[1])
+        f.course = _crs
         f.speed = speed
         f.waypoints = wps
         f.scheduled = True

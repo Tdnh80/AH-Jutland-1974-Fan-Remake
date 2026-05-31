@@ -312,34 +312,31 @@ class TestLoadOrder(unittest.TestCase):
         self.assertEqual(bs.course, "SE")
         self.assertEqual(bs.speed, 18)
 
-    def test_fleet_center_at_start_hex_formation_keeps_offset(self):
-        # Fleet 几何中心锚在起始格心;非零偏移 Formation 自身保留 offset,
-        # 其渲染中心 = local_to_map(中心, initial_course, fwd, left)。
+    def test_fleet_anchor_at_entry_edge_formation_keeps_offset(self):
+        # Fleet 几何中心锚在起始格的「进入边中心」(GB-BS course SE -> NW 进入边);
+        # 非零偏移 Formation 保留 offset,渲染中心 = local_to_map(Fleet中心, course, fwd, left)。
         g = fs.Game()
         g.load_order_file(GB_FILE, "GB", "0,0")
-        center = fs.hex_center_xy(0, 0)
         bs = g.fleets["GB-BS"]
-        self.assertAlmostEqual(bs.anchor_xy[0], center[0], places=3)
-        self.assertAlmostEqual(bs.anchor_xy[1], center[1], places=3)
+        self.assertEqual(bs.anchor_xy, fs.entry_edge_center(0, 0, "SE"))
         # 3BCS: offset (32400F, 13000L), initial_course SE, absolute
         fm = [m for m in bs.formations if m.name == "3BCS"][0]
         self.assertEqual((fm.offset_fwd, fm.offset_left), (32400.0, 13000.0))
-        want = op.local_to_map(center, "SE", 32400.0, 13000.0)
+        want = op.local_to_map(bs.anchor_xy, "SE", 32400.0, 13000.0)
         got = bs._formation_center_xy(fm, bs.anchor_substep)
         self.assertAlmostEqual(got[0], want[0], places=3)
         self.assertAlmostEqual(got[1], want[1], places=3)
 
     def test_zero_offset_formation_at_fleet_center(self):
-        # GE SG 1SG offset 0 -> 渲染中心 == Fleet 几何中心(起始格心)
+        # GE SG 1SG offset 0 -> 渲染中心 == Fleet 几何中心(= 进入边中心)
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
-        center = fs.hex_center_xy(0, 0)
         sg = g.fleets["GE-SG"]
         fm = [m for m in sg.formations if m.name == "1SG"][0]
         self.assertEqual((fm.offset_fwd, fm.offset_left), (0.0, 0.0))
         got = sg._formation_center_xy(fm, sg.anchor_substep)
-        self.assertAlmostEqual(got[0], center[0], places=3)
-        self.assertAlmostEqual(got[1], center[1], places=3)
+        self.assertAlmostEqual(got[0], sg.anchor_xy[0], places=3)
+        self.assertAlmostEqual(got[1], sg.anchor_xy[1], places=3)
 
     def test_bs_fleet_holds_all_divisions_with_ships(self):
         g = fs.Game()

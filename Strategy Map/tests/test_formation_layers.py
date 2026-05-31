@@ -123,14 +123,15 @@ class TestTwoStagePipeline(unittest.TestCase):
         return f
 
     def test_in_succession_concrete_coords(self):
-        # absolute+follow, course E, sub=6, 18kn -> lead at (36000,0); trailers rollback 500
+        # absolute+follow, course E, 锚在 (0,0) 西边(-18000), sub=6 18kn -> lead 18000;
+        # trailers rollback 500
         f = self._fleet(course="E", n=3, kind=fm.LINE_AHEAD,
                         relative=fs.REL_ABSOLUTE, turning=fs.TURN_FOLLOW)
         ships = dict(f.ship_positions(6))
-        self.assertAlmostEqual(ships["F-1"][0], 36000.0, places=3)
+        self.assertAlmostEqual(ships["F-1"][0], 18000.0, places=3)
         self.assertAlmostEqual(ships["F-1"][1], 0.0, places=3)
-        self.assertAlmostEqual(ships["F-2"][0], 35500.0, places=3)
-        self.assertAlmostEqual(ships["F-3"][0], 35000.0, places=3)
+        self.assertAlmostEqual(ships["F-2"][0], 17500.0, places=3)
+        self.assertAlmostEqual(ships["F-3"][0], 17000.0, places=3)
 
     def test_zero_offset_single_formation_equals_v4_line_ahead(self):
         # 4a equivalence: relative+follow line-ahead == old LINE_AHEAD arc-rollback
