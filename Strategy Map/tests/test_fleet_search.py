@@ -71,11 +71,13 @@ class TestAxialGeometry(unittest.TestCase):
             self.assertEqual(fs.direction_between(a, b), d)
 
     def test_micro_position_edge_and_distance(self):
+        # 报告改为相对「最近的边中心」:点在格心东 5000,最近边中心是 E 边(+18000),
+        # 故距该边中心 = 13000。
         cx, cy = fs.hex_center_xy(0, 0)
-        h, edge, dist = fs.micro_position(cx + 5000, cy)   # 向 E 边偏 5000
+        h, edge, dist = fs.micro_position(cx + 5000, cy)
         self.assertEqual(h, (0, 0))
         self.assertEqual(edge, 'E')
-        self.assertAlmostEqual(dist, 5000.0, delta=TOL)
+        self.assertAlmostEqual(dist, 13000.0, delta=TOL)
 
 
 class TestLineAheadFormation(unittest.TestCase):

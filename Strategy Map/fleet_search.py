@@ -188,20 +188,19 @@ def direction_between(a, b):
 
 
 def micro_position(x, y):
-    """Return (hex, edge_dir, dist_to_centre).  edge_dir = the edge midpoint the
-    point lies toward (one of 6 dirs), dist = yards from hex centre."""
+    """返回 (hex, edge_dir, dist):点所在格 + 最近的边中心方向(6 个边向之一)+
+    距该边中心的码数。点恰在格心(到各边中心约等距 = APOTHEM)时 edge_dir = None。"""
     h = xy_to_hex(x, y)
     cx, cy = hex_center_xy(*h)
-    dx, dy = x - cx, y - cy
-    dist = math.hypot(dx, dy)
-    if dist < 1.0:
+    if math.hypot(x - cx, y - cy) < 1e-6:
         return h, None, 0.0
-    best, best_dot = None, -2.0
-    for d, (vx, vy) in DIRVEC.items():
-        dot = (dx * vx + dy * vy) / dist
-        if dot > best_dot:
-            best, best_dot = d, dot
-    return h, best, dist
+    best, best_d = None, None
+    for d in DIRECTION_LIST:
+        ex, ey = edge_center(*h, d)
+        dist = math.hypot(x - ex, y - ey)
+        if best_d is None or dist < best_d:
+            best, best_d = d, dist
+    return h, best, best_d
 
 
 def parse_cell_or_hex(s):
@@ -224,8 +223,10 @@ def micro_str(x, y):
     h, edge, dist = micro_position(x, y)
     name = display_cell(*h)
     if edge is None:
-        return f"{name} at centre"
-    return f"{name}  {dist:.0f} yd from centre → {edge} edge"
+        return f"{name} centre"
+    if dist < 1e-3:
+        return f"{name} {edge} edge-centre"
+    return f"{name} {edge} edge-centre +{dist:.0f}yd"
 
 
 def random_walk_path(start, speed, rng, prev_dir=None, straight_bias=0.65,

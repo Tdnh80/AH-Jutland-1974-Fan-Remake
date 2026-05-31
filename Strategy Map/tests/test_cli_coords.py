@@ -23,6 +23,24 @@ class TestCliCoords(unittest.TestCase):
         self.assertIn("A13", fs.micro_str(x + 4000, y))
 
 
+class TestMicroEdge(unittest.TestCase):
+    def test_at_w_edge_centre_reports_zero(self):
+        x, y = fs.edge_center(0, 0, 'W')
+        s = fs.micro_str(x, y)
+        self.assertIn("W edge-centre", s)
+        self.assertNotIn("+", s)              # exactly at the edge centre -> no offset
+
+    def test_at_hex_centre_reports_centre(self):
+        x, y = fs.hex_center_xy(0, 0)
+        self.assertIn("centre", fs.micro_str(x, y).lower())
+
+    def test_offset_from_edge_centre_shows_distance(self):
+        ex, ey = fs.edge_center(0, 0, 'E')
+        s = fs.micro_str(ex - 1000.0, ey)     # 1000 yd off the E edge centre
+        self.assertIn("E edge-centre", s)
+        self.assertIn("1000", s)
+
+
 class TestEdgeCenter(unittest.TestCase):
     def test_edge_center_each_dir_is_apothem_from_centre(self):
         c = fs.hex_center_xy(3, 1)
