@@ -10,3 +10,8 @@ requirement.zip
 /curve_*.png
 /board.png
 /v4_*.png
+/order_*.png
+/closeup.png
+/*_closeup.png
+/turn_*.png
+/edge_center_model.png
