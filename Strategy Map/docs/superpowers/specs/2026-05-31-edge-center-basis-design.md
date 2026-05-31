@@ -51,7 +51,8 @@ entry_edge_center(q, r, course) -> (x, y)
 | `add_fleet(name,…,hex,course,…)` | `anchor_xy = hex_center_xy(hex)` | `anchor_xy = entry_edge_center(hex, course)` |
 | `relocate(name, hex, course, …)` | `anchor_xy = hex_center_xy(hex)` | `anchor_xy = entry_edge_center(hex, course)` |
 | `load_order_file(…, start_hex, …)` | Fleet 中心 = `hex_center_xy(start_hex)` | Fleet 几何中心 = `entry_edge_center(start_hex, fleet.course)`(course=N/S 退化为格心) |
-| `_end_schedule`(schedule 收尾再锚) | `anchor_xy = lead_xy(end)`(精确终点) | **不变**(见 §3.5) |
+| `schedule(…)`(下计划时 snap 起点) | `anchor_xy = hex_center_xy(cur_hex)` | `anchor_xy = entry_edge_center(cur_hex, dir(cur→w1))`(见 §3.5) |
+| `_end_schedule`(schedule 收尾再锚) | `anchor_xy = lead_xy(end)`(精确终点) | **不变**(终点本就是边中心,见 §3.5) |
 
 `anchor_substep`、`course`、`display_history` 首点等随锚点同步(`display_history` 首点改记锚点=边中心)。
 
@@ -68,10 +69,20 @@ entry_edge_center(q, r, course) -> (x, y)
   - **特例**:恰在格心(到各边等距 = 18000,即 18 节 sub3),报 `"(q,r) 格心"`,避免任选一边的歧义。
 - 影响面:接敌报告、`status_line`、特写图标注、`display_cell` 仍只管"哪个格"不变。
 
-### 3.5 schedule 模式(本次不动,显式标注)
-`schedule` 用**六角格航路点(格心)**显式标定路径,是与 `course` 并行的"手工铺路"模式。本次"格边中心基准"只规范 **course 巡航 + 落点**;schedule 的航路点仍按格心、`_end_schedule` 仍锚在精确终点。
-- 已知小瑕疵:边中心起步后接 schedule,首段 = 边中心→首航路点格心(可能 1.5 格)。属可接受的混合基准。
-- 列入开放项(§6):是否要让 schedule 也走边中心,待朋友定。
+### 3.5 schedule 模式(本次一并转格边中心,改动极小)
+`schedule` 用六角格航路点显式铺路。当前实现下计划时已把起点 **snap 到 `cur_hex` 格心**(`f.anchor_xy = hex_center_xy(cur_hex)`)。**唯一改动**:把这个 snap 目标从格心改为**进入边中心**:
+```
+f.anchor_xy = entry_edge_center(cur_hex, dir(cur_hex → w1))   # dir = chain[0]→chain[1]
+```
+其余**全不变**:`waypoints`(仍是航路点格心)、`f.course = dir(cur→w1)`、`total = need × HEX_SIDE`、折线 `[anchor] + [hex_center_xy(w) …]`、`schedule_end_substep`。
+
+**几何为何自洽**(关键):锚点退到进入边后,折线整体沿航向后移 18000(=APOTHEM):
+- 回合边界(18 节每 36000 弧长)**自动落在相邻格的公共边中心**(歇脚=边)。
+- 航路点格心成为每拍**中点**,即**转向点**(转在心)。
+- 总弧长 `N×36000` 不变 ⇒ 舰队终点落在**最后一个航路点的进入边**(= `w_{N-1}/w_N` 公共边,比 `w_N` 格心早 18000),与"落点整体后移 APOTHEM"一致。
+- `_end_schedule` 锚在 `lead_xy(end)` = 该进入边中心,**天然是边中心,无需改**。
+
+边界:下计划时 `cur_hex = xy_to_hex(lead)`,若舰队恰在边上,`cur_hex` 取整可能落到任一侧(§4 已述);snap 与 `dir(cur→w1)` 几何上仍成立。schedule 起点 snap 行为本就存在(原 snap 到格心),此处只换 snap 目标。
 
 ### 3.6 锁定约定的更新
 - 原"位置存精确 (x,y),报告不吸附格心" → 更新为:**常态静止点 = 格边中心**;运动中仍存精确 (x,y)、不吸附;**报告基准 = 格边中心**(边中心本身是真实点,非吸附)。
@@ -97,19 +108,20 @@ entry_edge_center(q, r, course) -> (x, y)
 - `test_replay`:直行位置断言平移(锚点 −18000)。
 - `test_orderparse`:`test_fleet_center_at_start_hex…`、`…zero_offset…at_fleet_center`、anchor 往返 → 改为断言**边中心**;3BCS/1SG 等渲染中心相对 Fleet 几何中心(=边中心)推导。
 - `test_cli_coords`(`micro_str`/`micro_position`):改为新"边中心"格式。
-- 新增:`entry_edge_center` 单测(6 方向边中心、N/S 退化为格心、OPPOSITE 进入边)、`micro_str` 边中心格式、`relocate K10 E → 西边中心`、18 节 `course` 在 sub3 转向。
+- `test_closeup_smoke`/`test_post_encounter` 等用 `schedule` 造接敌的用例:位置整体后移,接敌仍发生(只断言 state/文件的不受影响;断位置的需平移)。
+- 新增:`entry_edge_center` 单测(6 方向边中心、N/S 退化为格心、OPPOSITE 进入边)、`micro_str` 边中心格式、`relocate K10 E → 西边中心`、18 节 `course` 在 sub3 转向、**`schedule` 起点 snap 到进入边 + 回合边界落在公共边中心 + 终点在末航路点进入边**。
 - 验收线:`python -m unittest discover -s tests -t .` 全绿;锁定约定测试相应更新断言(非迁就)。
 
 ---
 
 ## 6. 开放项 / 后续
-- schedule 是否也改为格边中心基准(§3.5)——待朋友定;本次保持格心航路点。
-- 微观报告里"恰在格心"特例的措辞、以及"+Xyd"是否要再标朝向(toward 哪条边),可在实现时按可读性微调。
+- 微观报告里"恰在格心"特例的措辞、以及"+Xyd"是否要再标朝向(toward 哪条边),可在实现时按可读性微调,plot 校验。
 - 原点 `(0,0)` 对应搜索图哪格(独立的老问题,不阻塞本次)。
+- (schedule 已纳入本次,见 §3.5。)
 
 ---
 
 ## 7. 改动文件清单
-- `fleet_search.py`:新增 `entry_edge_center`/`edge_center`;改 `add_fleet`/`relocate`/`load_order_file` 落点;改 `micro_position`/`micro_str`;`next_cell_center_along`/course 排队/检测/队形**不动**。
+- `fleet_search.py`:新增 `entry_edge_center`/`edge_center`;改 `add_fleet`/`relocate`/`load_order_file`/`schedule` 落点(统一锚到进入边中心);改 `micro_position`/`micro_str`;`next_cell_center_along`/course 排队/`_end_schedule`/检测/队形**不动**。
 - 锁定约定文档(`CLAUDE.md`/`DEVELOPER.md`/`README.md`):更新"静止点=格边中心、报告相对格边中心"。
 - `tests/`:按 §5 更新与新增。
