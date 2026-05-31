@@ -1,6 +1,4 @@
 # AH-Jutland-1974-Fan-Remake
-基于The Avalon Hill Game Co的JUTLAND（1967,1974）的玩家自制重制。内容预计包括算子和表重制、规则改写及拓展、程序化实现部分原游戏功能等。
-# AH-Jutland-1974-Fan-Remake
 
 **基于 The Avalon Hill Game Co. 的《JUTLAND》（1967/1974）的玩家自制重制项目**
 
