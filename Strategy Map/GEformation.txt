@@ -10,7 +10,7 @@ GE:
 		Deployment direction（L R 指的向LorR延伸展开）以及Relative Position的方向全部基于Initial Course为正向0°的左90或者右90，并保持绝对不变（Together）或者相对不变（Follow）
 		简单来说就是坐标轴初始指向为Initial Course，可能需要一点坐标换算
 
-	BS：Initial Course SE（45°）
+	BS：Initial Course N
 		1st Div. — 5 — line ahead — space:550yds — Follow — 0 — Absolute
 		5th Div. — 4 — line ahead — space:550yds — Follow — 9000F — Absolute
 		6th Div. — 3 — line ahead — space:550yds — Follow — 4500F — Absolute
