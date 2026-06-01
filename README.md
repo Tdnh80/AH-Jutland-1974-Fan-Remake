@@ -77,7 +77,7 @@
 
 ## 规则书
 
-- **重制版规则**：`Rule Book/Jutland Remake RuleBook zh.docx`（中文，V1）
+- **重制版规则**：`Rule Book/Jutland Remake RuleBookV2 zh.docx`（中文，V2）
 - **1974原版规则中译**：`1974Rules_ZH_Translation/《日德兰》（《JUTLAND》） 74版规则中译V1.pdf`
 
 
