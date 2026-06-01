@@ -525,6 +525,7 @@ class Game:
         self.last_report = None        # dict for plotting the encounter marker
         self.state = STATE_SEARCH
         self.contact_hexes = set()
+        self.autoplot = False          # runtime-only switch; not serialized
         self.rng = random.Random()
         self.journal = journal_mod.Journal(self.start_minute, self.visibility)
 
@@ -1505,6 +1506,7 @@ Commands
   plot [file.png]                             full board
   plot order [file.png]                       order-of-battle view (one panel per fleet)
   plot closeup [file.png]                      zoom to the encounter hexes (alias: encounter)
+  autoplot on|off                             auto-save board (and encounter close-up) after each step
   demo [seed] [max_turns]
   save <file> / load <file>
   help / quit
@@ -1685,6 +1687,24 @@ def run_command(game, line):
                 print(f"          {e['gb']} center {micro_str(*e['gb_xy_contact'])}")
                 print(f"          {e['ge']} center {micro_str(*e['ge_xy_contact'])}")
             print("\n  Schedules HALTED.  (post-contact state machine: v5)\n")
+        if g.autoplot:
+            turn = g.current_turn
+            try:
+                fn = f"auto_t{turn}.png"
+                plot_state(g, fn)
+                print(f"  autoplot: saved {fn}")
+                if encs:
+                    enc_fn = f"auto_enc_t{turn}.png"
+                    plot_encounter_closeup(g, enc_fn)
+                    print(f"  autoplot: saved {enc_fn} (encounter close-up)")
+            except Exception as ex:
+                print(f"  autoplot: skipped ({ex})")
+    elif cmd == 'autoplot':
+        if not args or args[0].lower() not in ('on', 'off'):
+            print("  usage: autoplot on|off")
+        else:
+            g.autoplot = (args[0].lower() == 'on')
+            print(f"  ok: autoplot {'on' if g.autoplot else 'off'}")
     else:
         print(f"  unknown command: {cmd!r}")
 
