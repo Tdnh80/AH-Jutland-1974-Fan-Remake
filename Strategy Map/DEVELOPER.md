@@ -135,10 +135,10 @@ STEP_YARDS_PER_KNOT = 36000 / 108 ≈ 333.33  # 10 分钟 1 节走多少码
 
 `course` 不再原地即时转,而是登记待转向,旗舰驶到下一格心才 pivot:
 
-- `Fleet.pending_course / pending_speed / pending_turn_xy`:`course_change` 用 `next_cell_center_along(P, 当前course)` 算转向格心并登记(speed 也排队到同一格心)。再发当前航向 = 取消排队;有 schedule 时仍抛错。
+- `Fleet.pending_course / pending_speed / pending_turn_xy`:`course_change` 用 `next_cell_center_along(P, 当前course)` 算转向格心并登记。**变速立即生效**(就地重锚到当前精确位置再改 speed,避免格心前后混用两种速度致一周期净位移非整格数),只有转向排队到格心;`pending_speed` 已弃用恒 None(序列化字段保留作存档兼容)。仅变速(同向)只改速不排队;再发当前航向 = 取消排队;有 schedule 时仍抛错。
 - `next_cell_center_along(P, course)`(模块级):P 投影到过所在格心、方向 `DIRVEC[course]` 的轴,取前方第一格心(EPS 防 P 在格心取自身)。相邻格心沿任一正方向间距 = `HEX_SIDE`。
 - `_check_pending_turns(sub)`:每拍判 `arc_prev < turn_arc ≤ arc_now+EPS`,命中则在精确分数拍 `t_hit = anchor_substep + turn_arc/(speed·STEP)` 调 `_apply_pending_turn`。单拍弧长 ≤ 8000 < 36000,一拍最多触发一次。
-- `_apply_pending_turn(f, t_hit)`:钉锚到格心、`anchor_substep=t_hit`、改 course/(speed)、记 `incoming_dir = DIRVEC[旧course]`、清 pending、**把 `(t_hit, 格心)` 插进 `display_history`**(绘图航迹在格心拐弯,不切角)。
+- `_apply_pending_turn(f, t_hit)`:钉锚到格心、`anchor_substep=t_hit`、改 course、记 `incoming_dir = DIRVEC[旧course]`、清 pending、**把 `(t_hit, 格心)` 插进 `display_history`**(绘图航迹在格心拐弯,不切角)。**不改 speed**(变速已在 `course_change` 立即生效)。
 - `_xy_at_arc` 负弧分支:非 scheduled 且有 `incoming_dir` 时沿旧航向反推,使后船在到达同一格心前留在进入腿上(真鱼贯)。
 - 进 CONTACT(`_resolve_encounter`)清空所有 fleet 的 pending。180° 掉头简化为排队到前方格心反向。
 - **格边中心基准下**:静止点退到进入边中心,格心只在前方半格,故 18 节 `course` 在 **sub3** 转向(12kn sub4.5、24kn sub2.25)——`next_cell_center_along` 本身不变,是落点改变带来的提前。

@@ -48,11 +48,15 @@ class TestCourseChangeQueues(unittest.TestCase):
         self.assertAlmostEqual(f.pending_turn_xy[0], 0.0, delta=1e-3)
         self.assertAlmostEqual(f.pending_turn_xy[1], 0.0, delta=1e-3)
 
-    def test_pending_speed_recorded(self):
+    def test_speed_applied_immediately(self):
+        # 变速立即生效:course F NE 24 后 f.speed==24,pending_speed 不再使用(None)
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 1)
         g.course_change("F", "NE", 24)
-        self.assertEqual(g.fleets["F"].pending_speed, 24)
+        f = g.fleets["F"]
+        self.assertEqual(f.speed, 24)              # 立即改速
+        self.assertIsNone(f.pending_speed)         # pending_speed 恒 None
+        self.assertEqual(f.pending_course, "NE")   # 仅转向排队
 
     def test_reissue_current_course_cancels_pending(self):
         g = fs.Game()
@@ -75,7 +79,7 @@ class TestApplyPendingTurn(unittest.TestCase):
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 3)
         f = g.fleets["F"]
         f.pending_course = "SE"
-        f.pending_speed = 24
+        f.pending_speed = None   # pending_speed 不再使用(变速立即生效)
         f.pending_turn_xy = fs.hex_center_xy(1, 0)
         return g, f
 
@@ -85,16 +89,18 @@ class TestApplyPendingTurn(unittest.TestCase):
         self.assertEqual(f.anchor_xy, fs.hex_center_xy(1, 0))
         self.assertEqual(f.anchor_substep, 6.0)
         self.assertEqual(f.course, "SE")
-        self.assertEqual(f.speed, 24)
+        self.assertEqual(f.speed, 18)        # _apply 不再改速(变速已在 course_change 立即生效)
         self.assertIsNone(f.pending_course)
         self.assertIsNone(f.pending_speed)
         self.assertIsNone(f.pending_turn_xy)
 
-    def test_keeps_speed_when_pending_speed_none(self):
+    def test_apply_never_changes_speed(self):
+        # 即便手工误设 pending_speed,_apply 也不应改速
         g, f = self._pending_fleet()
-        f.pending_speed = None
+        f.pending_speed = 24
         g._apply_pending_turn(f, 6.0)
         self.assertEqual(f.speed, 18)
+        self.assertIsNone(f.pending_speed)
 
     def test_anchor_substep_can_be_float(self):
         g, f = self._pending_fleet()
@@ -175,6 +181,46 @@ class TestStepTurnArrival(unittest.TestCase):
         self.assertLess(f.lead_xy(g.current_substep + 1)[0], 0.0)   # 折返向西(过 (0,0) 往西)
 
 
+class TestSpeedChangeImmediate(unittest.TestCase):
+    """变速立即生效:一个规划周期(3 回合)净位移必须是整格数,不混用两种速度。"""
+
+    def _net_after_3_turns(self, g, name):
+        import math
+        f = g.fleets[name]
+        start = f.lead_xy(g.current_substep)
+        for _ in range(3):
+            g.step_turn()
+        end = f.lead_xy(g.current_substep)
+        return math.hypot(end[0] - start[0], end[1] - start[1])
+
+    def test_pure_12kn_net_72000(self):
+        # 纯 12kn 直行 3 回合 = 2 格 = 72000(基线)
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 12, 1)
+        self.assertAlmostEqual(self._net_after_3_turns(g, "F"), 72000.0, delta=1.0)
+
+    def test_18kn_then_12kn_same_course_net_72000(self):
+        # 18kn 起,同向变速到 12kn 立即生效 -> 3 回合净位移 == 72000(非 78000 的混速 bug)
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 1)
+        f = g.fleets["F"]
+        g.course_change("F", "E", 12)            # 同向仅变速
+        self.assertEqual(f.speed, 12)            # 立即生效
+        self.assertIsNone(f.pending_course)      # 同向不排队转向
+        self.assertIsNone(f.pending_speed)
+        self.assertAlmostEqual(self._net_after_3_turns(g, "F"), 72000.0, delta=1.0)
+
+    def test_course_ne_12_changes_speed_immediately(self):
+        # course F NE 12:变速立即生效(speed=12),仅转向 NE 排队到格心
+        g = fs.Game()
+        g.add_fleet("F", "GB", 0, "0,0", "E", 18, 1)
+        f = g.fleets["F"]
+        g.course_change("F", "NE", 12)
+        self.assertEqual(f.speed, 12)
+        self.assertEqual(f.pending_course, "NE")
+        self.assertIsNone(f.pending_speed)
+
+
 class TestEncounterClearsPending(unittest.TestCase):
     def test_pending_cleared_on_contact(self):
         g = fs.Game()
@@ -195,11 +241,15 @@ class TestEncounterClearsPending(unittest.TestCase):
 
 class TestSaveLoadPending(unittest.TestCase):
     def test_roundtrip_pending(self):
+        # 变速立即生效:course SE 24 -> speed=24 即时、pending_speed=None,只有转向排队。
+        # 往返应保住 speed/course/pending_course/pending_turn_xy(pending_speed 恒 None)。
         g = fs.Game()
         g.add_fleet("F", "GB", 0, "0,0", "E", 18, 2)
         g.course_change("F", "SE", 24)
         f = g.fleets["F"]
-        pc, ps, ptx = f.pending_course, f.pending_speed, tuple(f.pending_turn_xy)
+        self.assertEqual(f.speed, 24)          # 立即生效
+        self.assertIsNone(f.pending_speed)
+        pc, ptx = f.pending_course, tuple(f.pending_turn_xy)
         fd, path = tempfile.mkstemp(suffix=".json")
         os.close(fd)
         try:
@@ -207,8 +257,10 @@ class TestSaveLoadPending(unittest.TestCase):
             g2 = fs.Game()
             g2.load(path)
             f2 = g2.fleets["F"]
+            self.assertEqual(f2.speed, 24)
+            self.assertEqual(f2.course, "E")    # 转向尚未应用(仍在 pending)
             self.assertEqual(f2.pending_course, pc)
-            self.assertEqual(f2.pending_speed, ps)
+            self.assertIsNone(f2.pending_speed)
             self.assertAlmostEqual(f2.pending_turn_xy[0], ptx[0], delta=1e-3)
             self.assertAlmostEqual(f2.pending_turn_xy[1], ptx[1], delta=1e-3)
         finally:

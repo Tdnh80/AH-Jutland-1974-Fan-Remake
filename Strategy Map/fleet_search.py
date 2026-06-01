@@ -660,18 +660,28 @@ class Game:
         f.display_history = [(self.current_substep, *f.anchor_xy)]
 
     def course_change(self, name, course, speed=None):
-        """登记排队转向:不立即改向,而是驶到当前航向前方的下一格心再转(§5)。
-        速度变化也排队到同一格心生效。再发当前航向 = 取消排队。"""
+        """变速立即生效,只有转向排队到格心(§5)。
+        若给了 speed 且不同于当前 -> 就地重锚到当前精确位置并立即改速(避免格心前后
+        混用两种速度,导致一周期净位移不是整格数)。之后再处理航向:航向变了才基于
+        (可能已重锚的)当前位置沿当前 course 排队到下一格心转向。再发当前航向 = 取消排队。
+        pending_speed 不再使用(恒置 None;序列化字段保留作存档兼容)。"""
         f = self._get(name)
         if course not in NEIGH: raise ValueError("bad course")
         if speed is not None and speed not in VALID_SPEEDS: raise ValueError("bad speed")
         if f.scheduled: raise ValueError(f"{name!r} has an active schedule; clear it first")
-        if course == f.course and (speed is None or speed == f.speed):
+        # 变速立即生效:就地重锚再改速
+        if speed is not None and speed != f.speed:
+            f.anchor_xy = f.lead_xy(self.current_substep)
+            f.anchor_substep = self.current_substep
+            f.speed = speed
+        if course == f.course:
+            # 仅变速(或无任何变化):取消任何排队转向,保持现状
             f.pending_course = f.pending_speed = f.pending_turn_xy = None
             return
+        # 航向变了:基于(可能已重锚的)当前位置沿当前 course 排队到下一格心转向
         P = f.lead_xy(self.current_substep)
         f.pending_course = course
-        f.pending_speed = speed
+        f.pending_speed = None
         f.pending_turn_xy = next_cell_center_along(P, f.course)
 
     def clear_schedule(self, name):
@@ -799,14 +809,13 @@ class Game:
 
     def _apply_pending_turn(self, f, t_hit):
         """旗舰抵达 pending_turn_xy(格心)那刻应用排队转向(类比 _end_schedule)。
-        钉锚到该格心、anchor_substep=t_hit(可 float)、改 course、若有则改 speed、
-        记下旧航向供后船弧长回退(鱼贯),清空三个 pending 字段。"""
+        钉锚到该格心、anchor_substep=t_hit(可 float)、改 course、
+        记下旧航向供后船弧长回退(鱼贯),清空三个 pending 字段。
+        变速已在 course_change 里立即生效,这里不再改 speed。"""
         f.incoming_dir = DIRVEC[f.course]
         f.anchor_xy = f.pending_turn_xy
         f.anchor_substep = t_hit
         f.course = f.pending_course
-        if f.pending_speed is not None:
-            f.speed = f.pending_speed
         f.pending_course = None
         f.pending_speed = None
         f.pending_turn_xy = None
