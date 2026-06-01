@@ -1193,8 +1193,8 @@ def plot_state(game, filename):
             if not (x_min <= cx <= x_max and y_min <= cy <= y_max): continue
             ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True, fill=False,
                                  edgecolor='#d3d3d3', linewidth=0.5))
-            ax.text(cx, cy, f"{q},{r}", ha='center', va='center',
-                    fontsize=6, color='#c0c0c0')
+            ax.text(cx, cy, f"{q},{r}\n{display_cell(q, r)}", ha='center', va='center',
+                    fontsize=5, color='#c0c0c0')
 
     colors = {'GB': '#a32020', 'GE': '#1f4e8a'}   # swapped: GB red, GE blue
     for f in active:
@@ -1393,8 +1393,8 @@ def plot_encounter_closeup(game, filename):
             fc = '#ffffcc' if in_contact else 'none'
             ax.add_patch(Polygon(_hex_corners(cx, cy), closed=True,
                                  facecolor=fc, edgecolor=ec, linewidth=lw))
-            ax.text(cx, cy, display_cell(q, r), ha='center', va='center',
-                    fontsize=7, color='#808080')
+            ax.text(cx, cy, f"{q},{r}\n{display_cell(q, r)}", ha='center', va='center',
+                    fontsize=6, color='#808080')
 
     colors = {'GB': '#a32020', 'GE': '#1f4e8a'}
     for f in active:
