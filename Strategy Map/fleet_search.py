@@ -577,6 +577,10 @@ class Game:
             crs = ofleet.initial_course
             if crs not in DIRVEC:   # 允许 N/S 作布局参考轴(见 DIRVEC 注释)
                 raise ValueError(f"unsupported initial course {crs!r} in {ofleet.name}")
+            # N/S 只是队形布局轴(0° 偏移轴),不是可操舵航向(不在 NEIGH、无进入边)。
+            # 实际航向退化为合法默认 NE:Fleet(course=)、anchor 落点都用 move_course;
+            # initial_course 仍冻结 crs(=N),使 absolute 偏移沿 N–S 轴摆开队形。
+            move_course = crs if crs in NEIGH else 'NE'
             # fleet 名不含空格,否则 CLI 按空格切词无法选中(如 'course GB-BCF NE')
             fleet_name = f"{side}-{ofleet.name}"
             if fleet_name in self.fleets:
@@ -595,11 +599,12 @@ class Game:
                     frozen_offset_xy=None,   # absolute 模式由 ship_positions 懒冻结
                     note=ofm.note,
                 ))
-            fleet_anchor = entry_edge_center(*h, crs)   # crs=N/S 无边 -> 退化为格心
+            # 落点用 move_course(NE)的进入边中心;crs=N/S 时不再退化成格心。
+            fleet_anchor = entry_edge_center(*h, move_course)
             f = Fleet(
                 name=fleet_name, side=side, activated_turn=activated,
                 anchor_xy=fleet_anchor, anchor_substep=activated * 6,
-                course=crs, speed=speed, initial_course=crs,
+                course=move_course, speed=speed, initial_course=crs,
                 formations=run_fms,
             )
             f.display_history.append((activated * 6, *fleet_anchor))

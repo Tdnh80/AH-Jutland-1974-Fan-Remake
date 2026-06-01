@@ -296,11 +296,60 @@ class TestLoadOrder(unittest.TestCase):
         self.assertEqual(len(g.fleets["GE-SG"].formations), 6)
 
     def test_loadorder_ge_accepts_initial_course_N(self):
-        # N 作 initial_course(布局轴)应能 loadorder 成功,不再因不在 6 个航向而报错
+        # N 作 initial_course(布局轴)应能 loadorder 成功,不再因不在 6 个航向而报错。
+        # 解耦:initial_course 仍冻结 N(布局轴),实际航向退化为合法默认 NE。
         g = fs.Game()
         g.load_order_file(GE_FILE, "GE", "0,0")
         self.assertEqual(g.fleets["GE-BS"].initial_course, "N")
-        self.assertEqual(g.fleets["GE-BS"].course, "N")
+        self.assertEqual(g.fleets["GE-BS"].course, "NE")
+
+    def test_ge_bs_anchor_at_ne_entry_edge_not_centre(self):
+        # 落点用 move_course=NE 的进入边中心(= 格心 + APOTHEM·DIRVEC[SW]),不再退化成格心。
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        bs = g.fleets["GE-BS"]
+        want = fs.entry_edge_center(0, 0, "NE")
+        self.assertAlmostEqual(bs.anchor_xy[0], want[0], places=3)
+        self.assertAlmostEqual(bs.anchor_xy[1], want[1], places=3)
+        # 与退化成格心 (0,0) 明显不同
+        self.assertGreater(math.hypot(*bs.anchor_xy), 1.0)
+
+    def test_ge_bs_steps_northeast_not_north(self):
+        # step 后 GE-BS 朝 NE 移动(沿 +x/北偏),不是正北(纯 -y)。
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        bs = g.fleets["GE-BS"]
+        p0 = bs.lead_xy(bs.anchor_substep)
+        p1 = bs.lead_xy(bs.anchor_substep + 6)   # 推进一回合
+        ne = fs.DIRVEC["NE"]
+        move = (p1[0] - p0[0], p1[1] - p0[1])
+        # 位移与 NE 单位向量同向(归一点积≈1),x 分量为正(正北时 x 应为 0)
+        mlen = math.hypot(*move)
+        self.assertGreater(mlen, 1.0)
+        dot = (move[0] * ne[0] + move[1] * ne[1]) / mlen
+        self.assertAlmostEqual(dot, 1.0, places=6)
+        self.assertGreater(move[0], 1.0)
+
+    def test_ge_bs_absolute_offset_frozen_on_N_axis(self):
+        # absolute 偏移仍沿 initial_course=N 冻结:某 absolute Division 的渲染中心
+        # 相对 Fleet 中心的偏移向量应等于 local_to_map 用 N 轴算出的(队形沿 N–S 摆开)。
+        g = fs.Game()
+        g.load_order_file(GE_FILE, "GE", "0,0")
+        bs = g.fleets["GE-BS"]
+        sub = bs.anchor_substep
+        center = bs.lead_xy(sub)
+        fm = [m for m in bs.formations
+              if m.relative == fs.REL_ABSOLUTE
+              and (m.offset_fwd, m.offset_left) != (0.0, 0.0)][0]
+        # 沿 N 轴(fleet_search.DIRVEC 含 N;orderparse.DIRVEC 不含)冻结偏移:
+        # forward_hat = DIRVEC[N]=(0,-1),left_hat=(fy,-fx)=(-1,0)。
+        fx, fy = fs.DIRVEC["N"]
+        lx, ly = fy, -fx
+        want = (center[0] + fm.offset_fwd * fx + fm.offset_left * lx,
+                center[1] + fm.offset_fwd * fy + fm.offset_left * ly)
+        got = bs._formation_center_xy(fm, sub)
+        self.assertAlmostEqual(got[0], want[0], places=3)
+        self.assertAlmostEqual(got[1], want[1], places=3)
 
     def test_loaded_fleet_side_and_course(self):
         g = fs.Game()
