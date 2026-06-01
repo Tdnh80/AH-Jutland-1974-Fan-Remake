@@ -22,8 +22,7 @@ GB:
 		Attached LC R  — 2 — line ahead — space:2000yds — Together — 1000F 8000R — Absolute
 		2CS-A — 3 — line abreast — Deployment direction:R — space:12150yds — Together — 26350F 28350L — Absolute
 		2CS-B — 3 — line abreast — Deployment direction:L — space:12150yds — Together — 26350F 28350R — Absolute
-			下方此处考虑是否坐标变化至下一六角格？作为独立Fleet
-		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Absolute
+		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Relative
 		Attached LC — 2 — line abreast — Deployment direction:R — space:6000yds — Together — 38400F 16000L — Relative
 
 	BCF：Initial Course SE（45°）
