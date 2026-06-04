@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# 原始资料压缩包(已解压到 requirement/)
+requirement.zip
+
+# 生成的演示/绘图(根目录)
+/demo_*.png
+/curve_*.png
+/board.png
+/v4_*.png
+/order_*.png
+/closeup.png
+/*_closeup.png
+/turn_*.png
+/edge_center_model.png
+/auto_*.png

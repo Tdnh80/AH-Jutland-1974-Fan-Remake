@@ -10,7 +10,7 @@ GB:
 		Deployment direction（L R 指的向LorR延伸展开）以及Relative Position的方向全部基于Initial Course为正向0°的左90或者右90，并保持绝对不变（Together）或者相对不变（Follow）
 		简单来说就是坐标轴初始指向为Initial Course，可能需要一点坐标换算
 
-	BF：Initial Course SE（45°）
+	BS：Initial Course SE（45°）
 		3rd Div. — 4 — line ahead — space:500yds — Together — 1125L — Absolute
 		2nd Div. — 4 — line ahead — space:500yds — Together — 3375L — Absolute
 		1st Div. — 4 — line ahead — space:500yds — Together — 5625L — Absolute
@@ -22,7 +22,7 @@ GB:
 		Attached LC R  — 2 — line ahead — space:2000yds — Together — 1000F 8000R — Absolute
 		2CS-A — 3 — line abreast — Deployment direction:R — space:12150yds — Together — 26350F 28350L — Absolute
 		2CS-B — 3 — line abreast — Deployment direction:L — space:12150yds — Together — 26350F 28350R — Absolute
-		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Relative
+		3BCS — 3 — line ahead — space:500yds — Follow — 32400F 13000L — Absolute
 		Attached LC — 2 — line abreast — Deployment direction:R — space:6000yds — Together — 38400F 16000L — Relative
 
 	BCF：Initial Course SE（45°）
